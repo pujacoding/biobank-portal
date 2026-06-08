@@ -186,12 +186,15 @@ router.get('/', authenticateToken, requirePermission('View Sample', 'Sample Mana
              c.consent_type,
              b.barcode_value as barcode_text,
              b.qr_code_base64,
-             b.code128_base64
+             b.code128_base64,
+             sh.destination as shipment_destination
       FROM samples s
       LEFT JOIN users u ON s.collector_id = u.id
       LEFT JOIN labs l ON s.lab_id = l.id
       LEFT JOIN consent c ON s.consent_id = c.id
       LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status = 'Active'
+      LEFT JOIN shipment_samples ss ON s.id = ss.sample_id
+      LEFT JOIN shipments sh ON ss.shipment_id = sh.id
     `;
     const params = [];
 

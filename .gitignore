@@ -2,3 +2,5 @@
 .vscode/
 node_modules/
 .env
+lab-portal/backend/data/*.db
+lab-portal/backend/data/*.bak

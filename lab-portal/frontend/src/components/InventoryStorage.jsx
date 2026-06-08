@@ -31,11 +31,28 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
   );
 
   // Filter samples that are verified and barcode-generated, but NOT yet stored (ready for deposition)
-  const availableToDeposit = samples.filter(s => 
-    s.consent_status === 'Verified' && 
-    s.barcode_text && 
-    (!s.location || s.retrieval_status === 'Retrieved')
-  );
+  const availableToDeposit = samples.filter(s => {
+    const isBaseAvailable = s.consent_status === 'Verified' && 
+      s.barcode_text && 
+      (!s.location || s.retrieval_status === 'Retrieved');
+
+    if (!isBaseAvailable) return false;
+
+    // A sample that is currently shipped (in transit) cannot be deposited
+    if (s.status === 'Shipped') {
+      return false;
+    }
+
+    // A sample received at a depot must match the corresponding freezer unit's depot
+    if (s.status === 'Received') {
+      const targetDepot = activeUnit === 'LN2-01' 
+        ? 'AURA Central Biobank - LN2 Cryo Tank Yard' 
+        : 'AURA Central Biobank - ULT Storage Wing';
+      return s.shipment_destination === targetDepot;
+    }
+
+    return true;
+  });
 
   const handleWellClick = (wellId) => {
     // Check if well is occupied
