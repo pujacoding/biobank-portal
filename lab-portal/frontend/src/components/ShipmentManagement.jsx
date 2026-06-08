@@ -140,10 +140,8 @@ export default function ShipmentManagement({ samples, backendUrl, token, user, o
                 onChange={(e) => setDestination(e.target.value)}
               >
                 <option value="">-- Choose Location --</option>
-                <option value="AURA Central Biobank - ULT Storage Wing">AURA Central Biobank - ULT Storage Wing</option>
-                <option value="AURA Central Biobank - LN2 Cryo Tank Yard">AURA Central Biobank - LN2 Cryo Tank Yard</option>
-                <option value="Metropolis Diagnostics Processing Facility">Metropolis Diagnostics Processing Facility</option>
-                <option value="Harvard Medical School Research Lab">Harvard Medical School Research Lab</option>
+                <option value="ULT-03">ULT Freezer 03 (-80.4°C)</option>
+                <option value="LN2-01">LN2 Tank 01 (-196.2°C)</option>
               </select>
             </div>
 

@@ -43,12 +43,9 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
       return false;
     }
 
-    // A sample received at a depot must match the corresponding freezer unit's depot
+    // A sample received at a depot must match the corresponding freezer unit
     if (s.status === 'Received') {
-      const targetDepot = activeUnit === 'LN2-01' 
-        ? 'AURA Central Biobank - LN2 Cryo Tank Yard' 
-        : 'AURA Central Biobank - ULT Storage Wing';
-      return s.shipment_destination === targetDepot;
+      return s.shipment_destination === activeUnit;
     }
 
     return true;
