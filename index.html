@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AURA Biobank | Specimen Intelligence & Governance Portal</title>
+  <!-- Google Fonts Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Stylesheet linking -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme authenticated">
+  <!-- LIMS Secure Login Gate -->
+  <div id="login-portal" class="login-portal-wrapper">
+    <div class="login-card">
+      <div class="brand" style="margin-bottom: 24px; justify-content: center; width: 100%;">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="logo-svg">
+            <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2z"/>
+            <path d="M12 6a6 6 0 0 1 6 6c0 3.314-2.686 6-6 6s-6-2.686-6-6a6 6 0 0 1 6-6z"/>
+            <circle cx="12" cy="12" r="2" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="brand-text" style="text-align: left;">
+          <h2>AURA</h2>
+          <span>BIOMEDICAL BANK</span>
+        </div>
+      </div>
+      
+      <h3>LIMS Secure Entry Gateway</h3>
+      <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px; margin-bottom: 24px;">Provide operator credentials to authorize session access.</p>
+      
+      <form id="login-form" class="request-form" style="gap: 16px; display: flex; flex-direction: column;">
+        <div class="form-group" style="text-align: left;">
+          <label for="login-user-select" style="font-size:11px; margin-bottom:6px; display:block;">Select LIMS Operator Profile</label>
+          <select id="login-user-select" required>
+            <!-- Seeded dynamically by JS -->
+          </select>
+        </div>
+        
+        <div class="form-group" style="text-align: left;">
+          <label for="login-password" style="font-size:11px; margin-bottom:6px; display:block;">Security Passcode (Optional)</label>
+          <input type="password" id="login-password" placeholder="Enter passcode (default: lims2026)">
+        </div>
+
+        <div id="login-error-msg" style="color: var(--accent-red); font-size:11px; display:none; font-weight:600; text-align:left; margin-top: -8px;">
+          ✕ Invalid operator security passcode.
+        </div>
+        
+        <button type="submit" class="primary-btn w-full" style="margin-top: 10px; cursor: pointer; padding: 12px;">Authorize Session</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-layout">
+    <!-- Sidebar navigation -->
+    <aside class="app-sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="logo-svg">
+            <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2z"/>
+            <path d="M12 6a6 6 0 0 1 6 6c0 3.314-2.686 6-6 6s-6-2.686-6-6a6 6 0 0 1 6-6z"/>
+            <circle cx="12" cy="12" r="2" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h2>AURA</h2>
+          <span>BIOMEDICAL BANK</span>
+        </div>
+        <button type="button" class="sidebar-toggle-btn" id="btn-toggle-sidebar" aria-label="Toggle Sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; pointer-events: none;"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <ul>
+          <li class="nav-section-title">Researcher Portal</li>
+          <li>
+            <button class="nav-btn active" data-tab="dashboard-tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+              <span>Dashboard</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-tab="catalog-tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              <span>Cohort Discovery</span>
+              <span class="badge" id="catalog-count-badge">0</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-tab="requests-tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <span>Research Requests</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-tab="study-tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <span>Study Management</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-tab="allocation-tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span>Sample Allocation</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-tab="sharing-tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              <span>Data Sharing</span>
+            </button>
+          </li>
+          <li>
+            <button class="nav-btn" data-tab="publications-tab">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span>Publications</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="cart-preview-box" id="sidebar-cart-trigger">
+          <div class="cart-details">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="cart-icon"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            <div>
+              <p class="cart-title">Request Cart</p>
+              <p class="cart-subtitle" id="cart-counter-text">0 specimens selected</p>
+            </div>
+          </div>
+          <span class="cart-arrow">→</span>
+        </div>
+        
+        <div class="user-profile" id="user-profile-menu-trigger" aria-label="User menu" aria-haspopup="true" style="position: relative; cursor: pointer;">
+          <div class="avatar">DR</div>
+          <div>
+            <p class="profile-name">Dr. Sarah Chen</p>
+            <p class="profile-role">Lead Researcher</p>
+          </div>
+          
+          <!-- User Dropdown Menu -->
+          <div class="user-dropdown-menu" id="user-dropdown-list">
+            <button class="user-dropdown-item" id="btn-logout">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <span>Logout Account</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content area -->
+    <main class="app-main">
+      <header class="app-header">
+        <div class="header-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="global-search-input" placeholder="Search specimens, patient diagnoses, or freezer IDs..." aria-label="Global Search">
+        </div>
+        <div class="header-actions">
+          <div class="system-status-indicator">
+            <span class="status-dot online"></span>
+            <span>LIMS Connected</span>
+          </div>
+
+          <!-- THEME SWAPPER COMPONENT -->
+          <div class="theme-switcher">
+            <button class="icon-btn" id="theme-menu-trigger" aria-label="Toggle Theme Menu" aria-haspopup="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="theme-icon" id="header-theme-icon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+            <div class="theme-dropdown-menu" id="theme-dropdown-list">
+              <button class="theme-dropdown-item" data-theme="light">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <span>Light</span>
+              </button>
+              <button class="theme-dropdown-item" data-theme="dark">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <span>Dark</span>
+              </button>
+              <button class="theme-dropdown-item" data-theme="system">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><rect x="2" y="3" width="20" height="14" rx="2" stroke-width="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span>System</span>
+              </button>
+            </div>
+          </div>
+
+          <button class="icon-btn" aria-label="Notifications">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="content-viewport">
+        <!-- 1. DASHBOARD TAB -->
+        <section id="dashboard-tab" class="tab-panel active">
+          <div class="hero-banner">
+            <div class="hero-image-overlay">
+              <img src="assets/hero.png" alt="Futuristic automated biobank facility" fetchpriority="high">
+            </div>
+            <div class="hero-content">
+              <span class="pill-label">Operational Overview</span>
+              <h1>ISO 20387 Certified Bio-Repository</h1>
+              <p>Bridging translational science with cryptographically secure, pseudonymized donor data for next-generation clinical discovery.</p>
+              <div class="hero-stats">
+                <div class="hero-stat-item">
+                  <span class="stat-number" id="stats-total-specimens">--</span>
+                  <span class="stat-label">Total Biospecimens</span>
+                </div>
+                <div class="hero-stat-item">
+                  <span class="stat-number">99.98%</span>
+                  <span class="stat-label">Cold Chain Integrity</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Total Aliquots</span>
+                <span class="metric-icon teal-bg">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                </span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-specimen-count">--</h3>
+                <p class="metric-desc text-green">● Cryo-grid active</p>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Enrolled Donors</span>
+                <span class="metric-icon cyan-bg">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                </span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-donor-count">--</h3>
+                <p class="metric-desc text-cyan">● Registry synced</p>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Access Requests</span>
+                <span class="metric-icon orange-bg">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                </span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-request-count">--</h3>
+                <p class="metric-desc text-orange">● Secured in LIMS</p>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Consent Registry</span>
+                <span class="metric-icon purple-bg">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-block-count">--</h3>
+                <p class="metric-desc text-purple">● Immutable blocks</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-details" style="grid-template-columns: 1fr; margin-bottom: 24px;">
+            <div class="details-chart-card">
+              <div class="card-title-bar">
+                <h3>Live LIMS System Telemetry & Compliance Analytics</h3>
+                <span class="status-badge green-bg">Continuous Compute</span>
+              </div>
+              <div class="charts-subgrid">
+                <div class="chart-container-box">
+                  <h4 class="chart-box-title">SPECIMEN TYPE DISTRIBUTION</h4>
+                  <div id="donut-chart-container" class="chart-viewport-wrapper">
+                    <!-- Dynamic Donut Chart Injected by JS -->
+                  </div>
+                </div>
+                <div class="chart-container-box">
+                  <h4 class="chart-box-title">PATIENT RESEARCH CONSENT MATRIX</h4>
+                  <div id="bar-chart-container" class="chart-viewport-wrapper">
+                    <!-- Dynamic Bar Chart Injected by JS -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="details-chart-card">
+            <div class="card-title-bar">
+              <h3>LIMS Access Request Ledger</h3>
+              <span class="badge" id="requests-ledger-badge" style="background: rgba(0, 242, 254, 0.08); color: var(--accent-cyan);">0 Active</span>
+            </div>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.4;">This ledger displays all biospecimen access requests recorded persistently in the database, complete with scientific justification and verification states.</p>
+            <div class="catalog-table-container" style="max-height: 250px; overflow-y: auto;">
+              <table class="catalog-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Request ID</th>
+                    <th scope="col">Researcher</th>
+                    <th scope="col">Institution</th>
+                    <th scope="col">IRB Code</th>
+                    <th scope="col">Samples</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Submitted At</th>
+                  </tr>
+                </thead>
+                <tbody id="ledger-table-body">
+                  <tr>
+                    <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 24px 0;">
+                      No secure requests found in database. Select specimens in the catalog to submit a request.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- Ledger Pagination Controls -->
+            <div class="pagination-container" id="ledger-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+              <span id="ledger-pagination-info" style="font-size: 11px; color: var(--text-secondary);">Showing 0 to 0 of 0 entries</span>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="secondary-btn" id="ledger-btn-prev" style="padding: 4px 10px; font-size: 10px;">Previous</button>
+                <span id="ledger-page-info" style="font-size: 11px; color: var(--text-primary); font-weight: 600;">Page 1 of 1</span>
+                <button class="secondary-btn" id="ledger-btn-next" style="padding: 4px 10px; font-size: 10px;">Next</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. SPECIMEN CATALOG & COHORT BUILDER TAB -->
+        <section id="catalog-tab" class="tab-panel">
+          <div class="section-header">
+            <div>
+              <h1>Specimen Catalog & Cohort Builder</h1>
+              <p>Filter biospecimens instantly and build research-ready patient/sample cohorts securely.</p>
+            </div>
+            <div class="search-actions">
+              <span class="match-indicator" id="cohort-match-count">10 specimens found</span>
+            </div>
+          </div>
+
+          <!-- Cohort Query Builders -->
+          <search class="cohort-filter-panel">
+            <div class="filter-group">
+              <label for="filter-search-text">Search Keyword</label>
+              <input type="text" id="filter-search-text" placeholder="Search barcode, diagnosis, location...">
+            </div>
+
+            <div class="filter-group">
+              <label for="filter-sample-type">Specimen Type</label>
+              <select id="filter-sample-type">
+                <option value="all">All Types</option>
+                <option value="Blood">Whole Blood</option>
+                <option value="Serum">Serum / Plasma</option>
+                <option value="DNA">Purified DNA</option>
+                <option value="Tissue">Solid Tissue (FFPE)</option>
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <label for="filter-diagnosis">Primary Pathology</label>
+              <select id="filter-diagnosis">
+                <option value="all">All Pathologies</option>
+                <option value="Healthy Control">Healthy Control</option>
+                <option value="Type 2 Diabetes">Type 2 Diabetes</option>
+                <option value="Breast Cancer">Breast Cancer</option>
+                <option value="COVID-19">COVID-19 Post-Acute</option>
+              </select>
+            </div>
+
+            <div class="filter-group">
+              <label for="filter-gender">Donor Gender</label>
+              <select id="filter-gender">
+                <option value="all">Any Gender</option>
+                <option value="Female">Female</option>
+                <option value="Male">Male</option>
+              </select>
+            </div>
+
+            <div class="filter-group reset-group">
+              <button class="secondary-btn" id="btn-reset-filters">Reset Filters</button>
+            </div>
+          </search>
+
+          <!-- Specimen Grid / Table -->
+          <div class="catalog-table-container">
+            <table class="catalog-table">
+              <thead>
+                <tr>
+                  <th scope="col">Sample barcode</th>
+                  <th scope="col">Specimen Type</th>
+                  <th scope="col">Diagnosis (ICD-10)</th>
+                  <th scope="col">Donor Profile</th>
+                  <th scope="col">Storage Coordinate</th>
+                  <th scope="col">Quality (RIN/Integrity)</th>
+                  <th scope="col">Consent Level</th>
+                  <th scope="col">Action</th>
+                </tr>
+              </thead>
+              <tbody id="catalog-table-body">
+                <!-- Populated dynamically by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Catalog Pagination Controls -->
+          <div class="pagination-container" id="catalog-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-top: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+            <span id="catalog-pagination-info" style="font-size: 12px; color: var(--text-secondary);">Showing 0 to 0 of 0 entries</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="secondary-btn" id="catalog-btn-prev" style="padding: 6px 12px; font-size: 11px;">Previous</button>
+              <span id="catalog-page-info" style="font-size: 12px; color: var(--text-primary); font-weight: 600;">Page 1 of 1</span>
+              <button class="secondary-btn" id="catalog-btn-next" style="padding: 6px 12px; font-size: 11px;">Next</button>
+            </div>
+          </div>
+                <!-- 3. RESEARCH REQUESTS TAB -->
+        <section id="requests-tab" class="tab-panel">
+          <div class="section-header">
+            <div>
+              <h1>Research Access Requests Ledger</h1>
+              <p>Review submitted biospecimen access requests, IRB protocols, and approval/allocation status.</p>
+            </div>
+          </div>
+          <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+            <div class="card-title-bar" style="margin-bottom: 16px;">
+              <h3>Access Requests Register</h3>
+            </div>
+            <div class="catalog-table-container">
+              <table class="catalog-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Request ID</th>
+                    <th scope="col">Researcher</th>
+                    <th scope="col">Institution</th>
+                    <th scope="col">IRB Code</th>
+                    <th scope="col">Scientific Hypothesis</th>
+                    <th scope="col">Requested specimens</th>
+                    <th scope="col">Allocation Status</th>
+                  </tr>
+                </thead>
+                <tbody id="research-requests-tbody">
+                  <!-- Populated dynamically by JS -->
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- Research Requests Pagination Controls -->
+            <div class="pagination-container" id="requests-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+              <span id="requests-pagination-info" style="font-size: 11px; color: var(--text-secondary);">Showing 0 to 0 of 0 entries</span>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="secondary-btn" id="requests-btn-prev" style="padding: 4px 10px; font-size: 10px;">Previous</button>
+                <span id="requests-page-info" style="font-size: 11px; color: var(--text-primary); font-weight: 600;">Page 1 of 1</span>
+                <button class="secondary-btn" id="requests-btn-next" style="padding: 4px 10px; font-size: 10px;">Next</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. STUDY MANAGEMENT TAB -->
+        <section id="study-tab" class="tab-panel">
+          <div class="section-header">
+            <div>
+              <h1>Clinical Study Management</h1>
+              <p>Register and coordinate clinical research projects utilizing bio-repository specimens.</p>
+            </div>
+            <button class="primary-btn" id="btn-open-study-modal">+ Register Study</button>
+          </div>
+          
+          <div class="metrics-grid" id="studies-directory-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
+            <!-- Populated dynamically by JS -->
+          </div>
+        </section>
+
+        <!-- 5. SAMPLE ALLOCATION TAB -->
+        <section id="allocation-tab" class="tab-panel">
+          <div class="section-header">
+            <div>
+              <h1>Cohort Sample Allocation</h1>
+              <p>Approve pending access requests and allocate/release physical freezer specimen coordinates for research studies.</p>
+            </div>
+          </div>
+
+          <div class="donors-split-layout" style="display: grid; grid-template-columns: 1.2fr 1.8fr; gap: 24px;">
+            <div class="donors-master-panel">
+              <h3 style="font-size: 16px; font-weight:600; margin-bottom: 16px;">Pending Allocations</h3>
+              <div class="donors-card-list" id="allocation-pending-list">
+                <!-- Injected dynamically by JS -->
+              </div>
+            </div>
+            <div class="donor-details-panel" id="allocation-details-panel">
+              <div class="well-placeholder-text">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="placeholder-icon" style="width: 48px; height: 48px; margin-bottom: 12px; color: var(--accent-teal);"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                <p>Select a pending research access request from the list to allocate and approve target storage specimens.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. DATA SHARING TAB -->
+        <section id="sharing-tab" class="tab-panel">
+          <div class="section-header">
+            <div>
+              <h1>Genomic & Clinical Data Sharing</h1>
+              <p>Coordinate access to shared de-identified clinical registries, molecular arrays, and material transfer agreements (MTAs).</p>
+            </div>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;">
+            <div class="glass-card" style="padding: 24px; display: flex; flex-direction: column; gap: 12px; border-radius:16px;">
+              <h3 style="color: var(--accent-cyan); font-size:16px; margin: 0; font-weight:700;">🧬 Whole Exome Sequencing Dataset</h3>
+              <p style="font-size:12px; color: var(--text-secondary); line-height: 1.4; margin: 0;">De-identified exome sequence data (BAM/VCF format) representing Breast Cancer cohorts. Released under IRB-2026-BC.</p>
+              <div style="font-size: 11px; color: var(--text-tertiary);">Release date: 2026-04-10 &bull; Size: 1.2 TB</div>
+              <button class="secondary-btn" style="margin-top: 8px; font-size: 11px; padding: 8px;" onclick="alert('Access Request Sent: Data steward notified.')">Request Download Link</button>
+            </div>
+            <div class="glass-card" style="padding: 24px; display: flex; flex-direction: column; gap: 12px; border-radius:16px;">
+              <h3 style="color: var(--accent-teal); font-size:16px; margin: 0; font-weight:700;">📊 Type 2 Diabetes Serum Proteome</h3>
+              <p style="font-size:12px; color: var(--text-secondary); line-height: 1.4; margin: 0;">Mass spectrometry profiling data of serum aliquots in metabolic research cohort. Includes baseline clinical registry logs.</p>
+              <div style="font-size: 11px; color: var(--text-tertiary);">Release date: 2026-05-01 &bull; Size: 340 GB</div>
+              <button class="secondary-btn" style="margin-top: 8px; font-size: 11px; padding: 8px;" onclick="alert('Access Request Sent: Data steward notified.')">Request Download Link</button>
+            </div>
+            <div class="glass-card" style="padding: 24px; display: flex; flex-direction: column; gap: 12px; border-radius:16px;">
+              <h3 style="color: var(--accent-purple); font-size:16px; margin: 0; font-weight:700;">📁 COVID-19 Long-Haul Recovery Registry</h3>
+              <p style="font-size:12px; color: var(--text-secondary); line-height: 1.4; margin: 0;">Longitudinal clinical survey dataset of COVID-19 post-acute sequelae cohorts. Fully pseudonymized demographics registry.</p>
+              <div style="font-size: 11px; color: var(--text-tertiary);">Release date: 2026-05-18 &bull; Size: 1.2 GB</div>
+              <button class="secondary-btn" style="margin-top: 8px; font-size: 11px; padding: 8px;" onclick="alert('Access Request Sent: Data steward notified.')">Request Download Link</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. PUBLICATIONS TAB -->
+        <section id="publications-tab" class="tab-panel">
+          <div class="section-header">
+            <div>
+              <h1>Scientific Publications Registry</h1>
+              <p>Track peer-reviewed research papers and publications utilizing specimens sourced from the AURA Biobank.</p>
+            </div>
+            <button class="primary-btn" id="btn-open-pub-modal">+ Log Publication</button>
+          </div>
+
+          <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+            <div class="catalog-table-container">
+              <table class="catalog-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Paper Title</th>
+                    <th scope="col">Authors</th>
+                    <th scope="col">Journal</th>
+                    <th scope="col">DOI Identifier</th>
+                    <th scope="col">Linked Study</th>
+                    <th scope="col">Logged Date</th>
+                  </tr>
+                </thead>
+                <tbody id="publications-tbody">
+                  <!-- Injected by JS -->
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- Publications Pagination Controls -->
+            <div class="pagination-container" id="publications-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+              <span id="publications-pagination-info" style="font-size: 11px; color: var(--text-secondary);">Showing 0 to 0 of 0 entries</span>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="secondary-btn" id="publications-btn-prev" style="padding: 4px 10px; font-size: 10px;">Previous</button>
+                <span id="publications-page-info" style="font-size: 11px; color: var(--text-primary); font-weight: 600;">Page 1 of 1</span>
+                <button class="secondary-btn" id="publications-btn-next" style="padding: 4px 10px; font-size: 10px;">Next</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- NATIVE MODAL: REQUEST SUBMISSION OVERLAY -->
+  <dialog id="request-modal" class="request-cart-dialog">
+    <div class="modal-header">
+      <h2>Research Access Request Setup</h2>
+      <button class="close-modal-btn" id="btn-close-request-modal">✕</button>
+    </div>
+    
+    <div class="modal-body">
+      <div class="selected-samples-section">
+        <h3>Selected Specimens (<span id="modal-cart-count">0</span>)</h3>
+        <ul class="modal-cart-list" id="modal-cart-items-list">
+          <!-- Populated by JS -->
+        </ul>
+      </div>
+
+      <form method="dialog" id="request-checkout-form" class="request-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="req-name">Researcher Name</label>
+            <input type="text" id="req-name" required value="Dr. Sarah Chen" autocomplete="name">
+          </div>
+          <div class="form-group">
+            <label for="req-inst">Institution</label>
+            <input type="text" id="req-inst" required value="AURA Genomics Institute">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="req-irb">IRB Protocol Approval Code</label>
+          <input type="text" id="req-irb" required placeholder="e.g. IRB-2026-X9924-A" value="IRB-2026-X4902-T">
+        </div>
+
+        <div class="form-group">
+          <label for="req-purpose">Scientific Research Hypothesis & Purpose</label>
+          <textarea id="req-purpose" rows="3" required placeholder="Detail the biological assay and experimental goals..."></textarea>
+        </div>
+
+        <div class="modal-footer-actions">
+          <button type="button" class="secondary-btn" id="btn-cancel-request">Cancel</button>
+          <button type="submit" class="primary-btn" id="btn-submit-request">Submit Secure Access Request</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- NATIVE MODAL: REGISTER STUDY DIALOG -->
+  <dialog id="study-modal" class="request-cart-dialog" style="max-width: 550px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius:16px;">
+    <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+      <h2>Register Research Study</h2>
+      <button class="close-modal-btn" id="btn-close-study-modal-x" style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">✕</button>
+    </div>
+    <div class="modal-body" style="padding-top: 16px;">
+      <form method="dialog" id="study-registration-form" class="request-form">
+        <div class="form-group">
+          <label for="study-title">Study Title *</label>
+          <input type="text" id="study-title" required placeholder="e.g. Metabolic Biomarkers in Type 2 Diabetes" style="width:100%;">
+        </div>
+        <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="study-irb">IRB Code *</label>
+            <input type="text" id="study-irb" required placeholder="e.g. IRB-2026-T2D" style="width:100%;">
+          </div>
+          <div class="form-group">
+            <label for="study-investigator">Lead Investigator *</label>
+            <input type="text" id="study-investigator" required placeholder="e.g. Dr. Sarah Chen" style="width:100%;">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="study-desc">Study Description / Abstract</label>
+          <textarea id="study-desc" rows="3" placeholder="Provide study abstract, research goals and tissue targets..." style="width:100%; min-height:80px; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:10px; padding:10px; color:var(--text-primary); outline:none; resize:none; font-size:12px;"></textarea>
+        </div>
+        <div class="modal-footer-actions" style="margin-top: 16px; display:flex; justify-content:flex-end; gap:10px;">
+          <button type="button" class="secondary-btn" id="btn-close-study-modal-footer">Cancel</button>
+          <button type="submit" class="primary-btn" id="btn-save-study">Save Study</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- NATIVE MODAL: LOG PUBLICATION DIALOG -->
+  <dialog id="pub-modal" class="request-cart-dialog" style="max-width: 550px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius:16px;">
+    <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+      <h2>Log Research Publication</h2>
+      <button class="close-modal-btn" id="btn-close-pub-modal-x" style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">✕</button>
+    </div>
+    <div class="modal-body" style="padding-top: 16px;">
+      <form method="dialog" id="pub-registration-form" class="request-form">
+        <div class="form-group">
+          <label for="pub-title">Paper Title *</label>
+          <input type="text" id="pub-title" required placeholder="e.g. Serum Proteomic Signatures of Early-Onset Diabetes" style="width:100%;">
+        </div>
+        <div class="form-group">
+          <label for="pub-authors">Authors List *</label>
+          <input type="text" id="pub-authors" required placeholder="e.g. Chen S., Mercer A., Mercer L." style="width:100%;">
+        </div>
+        <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="pub-journal">Journal *</label>
+            <input type="text" id="pub-journal" required placeholder="e.g. Journal of Clinical Endocrine Research" style="width:100%;">
+          </div>
+          <div class="form-group">
+            <label for="pub-doi">DOI Identifier</label>
+            <input type="text" id="pub-doi" placeholder="e.g. 10.1234/jcer.2026.01" style="width:100%;">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="pub-study-select">Linked Research Study</label>
+          <select id="pub-study-select" style="width:100%; background:var(--bg-primary); border:1px solid var(--border-color); color:var(--text-primary); padding:10px; border-radius:10px;">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+        <div class="modal-footer-actions" style="margin-top: 16px; display:flex; justify-content:flex-end; gap:10px;">
+          <button type="button" class="secondary-btn" id="btn-close-pub-modal-footer">Cancel</button>
+          <button type="submit" class="primary-btn" id="btn-save-pub">Register Publication</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- NATIVE MODAL: BLOCKCHAIN BLOCK DETAIL -->
+  <dialog id="block-detail-modal" class="request-cart-dialog" style="max-width: 500px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius:16px;">
+    <div class="modal-header">
+      <h2>Block Cryptographic Verification Audit</h2>
+      <button class="close-modal-btn" id="btn-close-block-modal">✕</button>
+    </div>
+    <div class="modal-body" style="padding-top:16px;">
+      <p style="font-size:12px; color: var(--text-secondary); margin-bottom: 12px;">This data displays the raw block structure stored securely in the ledger registry, demonstrating linking hashes and action signatures.</p>
+      <div style="font-family: monospace; font-size:11px; background: rgba(0,0,0,0.3); padding: 16px; border-radius: 8px; border:1px solid var(--border-color); color:var(--accent-cyan); overflow-x: auto; line-height: 1.6; white-space: pre-wrap;" id="block-json-content">
+        <!-- Rendered by JS -->
+      </div>
+      <div style="margin-top: 20px; display:flex; justify-content: flex-end;">
+        <button class="secondary-btn" id="btn-close-block-modal-footer">Close Block Audit</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- NATIVE MODAL: PATIENT PORTAL DIALOG -->
+  <dialog id="patient-portal-modal" class="request-cart-dialog" style="max-width: 600px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius:16px;">
+    <div class="modal-header">
+      <h2>Patient Autonomy & Consent Portal</h2>
+      <button class="close-modal-btn" id="btn-close-portal-modal">✕</button>
+    </div>
+    <div class="modal-body" id="patient-portal-content" style="padding-top:16px;">
+      <!-- Populated dynamically by renderPatientPortal in app.js -->
+    </div>
+  </dialog>
+
+  <!-- NATIVE MODAL: PERFORM QUALITY CONTROL DIALOG -->
+  <dialog id="qc-modal" class="request-cart-dialog" style="max-width: 500px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius:16px;">
+    <div class="modal-header">
+      <h2>Specimen Quality Control Assessment</h2>
+      <button class="close-modal-btn" id="btn-close-qc-modal">✕</button>
+    </div>
+    <div class="modal-body" style="padding-top:16px;">
+      <form id="qc-form" class="request-form">
+        <input type="hidden" id="qc-specimen-barcode">
+        
+        <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size:12px;">
+          <strong>Target Specimen:</strong> <span id="qc-modal-barcode-display" style="font-family:monospace; color:var(--accent-purple); font-weight:700;"></span>
+        </div>
+
+        <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="qc-status-select">QC Status</label>
+            <select id="qc-status-select" style="width:100%; background:var(--bg-primary); border:1px solid var(--border-color); color:var(--text-primary); padding:8px; border-radius:8px;">
+              <option value="Passed">Passed / Verified</option>
+              <option value="Failed">Failed / Rejected</option>
+              <option value="Pending">Pending Audit</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="qc-metric-input">Quality Score / Metric</label>
+            <input type="text" id="qc-metric-input" required placeholder="e.g. RIN: 9.8 or DIN: 8.5" style="width:100%; padding:8px;">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="qc-notes-input">QC Audit Notes</label>
+          <textarea id="qc-notes-input" rows="2" placeholder="Record concentration, contamination levels, or volume deviations..." style="width:100%; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px; padding:8px; color:var(--text-primary); font-size:12px; resize:none;"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="qc-analyst-display">Performing Analyst</label>
+          <input type="text" id="qc-analyst-display" readonly style="width:100%; background:rgba(0,0,0,0.1); border:1px solid var(--border-color); color:var(--text-secondary); cursor:not-allowed; padding:8px;">
+        </div>
+
+        <div class="modal-footer-actions" style="margin-top: 16px; display:flex; justify-content:flex-end; gap:10px;">
+          <button type="submit" class="primary-btn">Save QC Assessment</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Print output container -->
+  <div id="print-section"></div>
+
+  <!-- Script linking -->
+  <script src="app.js" type="module"></script>
+</body>
+</html>
