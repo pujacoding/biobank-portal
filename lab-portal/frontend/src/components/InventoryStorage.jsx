@@ -43,9 +43,12 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
       return false;
     }
 
-    // A sample received at a depot must match the corresponding freezer unit
+    // A sample received at a depot must match the corresponding freezer unit (supporting direct matched IDs and old depot names)
     if (s.status === 'Received') {
-      return s.shipment_destination === activeUnit;
+      const isMatch = s.shipment_destination === activeUnit ||
+        (activeUnit === 'LN2-01' && s.shipment_destination === 'AURA Central Biobank - LN2 Cryo Tank Yard') ||
+        (activeUnit === 'ULT-03' && s.shipment_destination === 'AURA Central Biobank - ULT Storage Wing');
+      return isMatch;
     }
 
     return true;
@@ -439,7 +442,14 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
                     >
                       <option value="">-- Select Specimen --</option>
                       {availableToDeposit
-                        .filter(s => allowedTypes.includes(s.specimen_type))
+                        .filter(s => {
+                          const isReceivedAtUnit = s.status === 'Received' && (
+                            s.shipment_destination === activeUnit ||
+                            (activeUnit === 'LN2-01' && s.shipment_destination === 'AURA Central Biobank - LN2 Cryo Tank Yard') ||
+                            (activeUnit === 'ULT-03' && s.shipment_destination === 'AURA Central Biobank - ULT Storage Wing')
+                          );
+                          return allowedTypes.includes(s.specimen_type) || isReceivedAtUnit;
+                        })
                         .map(s => (
                           <option key={s.id} value={s.id}>{s.id} ({s.specimen_type} - Subject: {s.subject_id})</option>
                         ))
