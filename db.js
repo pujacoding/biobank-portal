@@ -2,13 +2,11 @@
 // AURA BIOBANK PORTAL: HYBRID DATABASE CONNECTOR
 // ==========================================
 import { firebaseConfig } from './firebase-config.js';
+import { supabase } from './supabase.js';
 
 const initialSpecimens = [];
-
 const initialDonors = [];
-
 const initialBlockchain = [];
-
 const initialUsers = [
   { id: 'usr-1', username: 'Dr. Sarah Chen', role: 'Admin', status: 'Active' },
   { id: 'usr-2', username: 'John Doe', role: 'Technician', status: 'Active' },
@@ -133,11 +131,11 @@ class LocalStorageDB {
     donors.push(donor);
     localStorage.setItem('aura_donors', JSON.stringify(donors));
     console.log(`AURA DB: Enrolled new donor [${donor.donorId}] in Local Mode.`);
-    
+
     // Add block to blockchain for enrollment
     const changeText = `Donor Enrolled: Diagnosis=${donor.diagnosis}, Consent: Academic=${donor.academic}, Genomic=${donor.genomic}, Commercial=${donor.commercial}`;
     await this.addBlockchainBlock(donor.donorId, changeText);
-    
+
     return donor;
   }
 
@@ -158,7 +156,7 @@ class LocalStorageDB {
       }
     });
     localStorage.setItem('aura_specimens', JSON.stringify(specimens));
-    
+
     // 3. Log to verifiable consent blockchain
     const changeText = `Consent Updated: Academic=${consent.academic}, Genomic=${consent.genomic}, Commercial=${consent.commercial}`;
     await this.addBlockchainBlock(donorId, changeText);
@@ -188,7 +186,7 @@ class LocalStorageDB {
     };
     requests.push(newRequest);
     localStorage.setItem('aura_requests', JSON.stringify(requests));
-    
+
     console.log(`AURA DB: Saved access request [${newRequest.requestId}] successfully in Local Mode.`);
     return newRequest;
   }
@@ -208,9 +206,9 @@ class LocalStorageDB {
     const prevBlock = ledger[0]; // Newly sorted desc, index 0 is newest
     const prevHash = prevBlock ? prevBlock.txHash : "0000000000000000000000000000000000000000000000000000000000000000";
     const nextIndex = prevBlock ? prevBlock.index + 1 : 0;
-    
-    const txHash = "0x" + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');
-    
+
+    const txHash = "0x" + Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+
     const newBlock = {
       index: nextIndex,
       timestamp: new Date().toISOString(),
@@ -219,7 +217,7 @@ class LocalStorageDB {
       donorId: donorId,
       change: changeText
     };
-    
+
     const allBlocks = JSON.parse(localStorage.getItem('aura_blockchain') || '[]');
     allBlocks.push(newBlock);
     localStorage.setItem('aura_blockchain', JSON.stringify(allBlocks));
@@ -295,13 +293,13 @@ class FirestoreDB {
   async connect() {
     // Dynamically import Firebase libraries from the Google CDN
     const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js');
-    const { 
-      getFirestore, 
-      collection, 
-      getDocs, 
-      doc, 
-      updateDoc, 
-      addDoc, 
+    const {
+      getFirestore,
+      collection,
+      getDocs,
+      doc,
+      updateDoc,
+      addDoc,
       setDoc,
       query,
       where
@@ -309,12 +307,12 @@ class FirestoreDB {
 
     this.app = initializeApp(firebaseConfig);
     this.db = getFirestore(this.app);
-    
+
     // Save standard firestore operations to the class instance for easy access
     this.fs = { collection, getDocs, doc, updateDoc, addDoc, setDoc, query, where };
 
     console.log("AURA DB: Cloud Firestore connected successfully.");
-    
+
     // Perform auto-seeding if Cloud DB is blank
     await this.autoSeedCloud();
   }
@@ -395,11 +393,11 @@ class FirestoreDB {
   async addDonor(donor) {
     await this.fs.setDoc(this.fs.doc(this.db, 'donors', donor.donorId), donor);
     console.log(`AURA DB: Enrolled new donor [${donor.donorId}] in Cloud Mode.`);
-    
+
     // Add block to blockchain for enrollment
     const changeText = `Donor Enrolled: Diagnosis=${donor.diagnosis}, Consent: Academic=${donor.academic}, Genomic=${donor.genomic}, Commercial=${donor.commercial}`;
     await this.addBlockchainBlock(donor.donorId, changeText);
-    
+
     return donor;
   }
 
@@ -441,7 +439,7 @@ class FirestoreDB {
       ...request
     };
     const docRef = await this.fs.addDoc(colRef, docData);
-    
+
     console.log(`AURA DB: Saved access request [${docRef.id}] in Cloud Mode.`);
     return { requestId: docRef.id, ...docData };
   }
@@ -469,9 +467,9 @@ class FirestoreDB {
     const prevBlock = ledger[0]; // Newly sorted desc, index 0 is newest
     const prevHash = prevBlock ? prevBlock.txHash : "0000000000000000000000000000000000000000000000000000000000000000";
     const nextIndex = prevBlock ? prevBlock.index + 1 : 0;
-    
-    const txHash = "0x" + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');
-    
+
+    const txHash = "0x" + Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+
     const newBlock = {
       index: nextIndex,
       timestamp: new Date().toISOString(),
@@ -480,7 +478,7 @@ class FirestoreDB {
       donorId: donorId,
       change: changeText
     };
-    
+
     await this.fs.setDoc(this.fs.doc(this.db, 'blockchain', `block_${nextIndex}`), newBlock);
     console.log(`AURA DB: Added blockchain block [${nextIndex}] in Cloud Mode.`);
     return newBlock;
@@ -665,7 +663,7 @@ class APIDB {
         .map(s => s.trim())
         .filter(s => s.length > 0)
         .map(barcode => ({ barcode }));
-      
+
       return {
         requestId: req.id,
         researcherName: req.researcher_name,
@@ -774,11 +772,11 @@ class APIDB {
 let dbDriver;
 let cloudActive = false;
 
-const isCloudConfigured = firebaseConfig && 
-                          firebaseConfig.apiKey && 
-                          firebaseConfig.apiKey !== "" && 
-                          !firebaseConfig.apiKey.includes("...") && 
-                          !firebaseConfig.apiKey.includes("YOUR_API_KEY");
+const isCloudConfigured = firebaseConfig &&
+  firebaseConfig.apiKey &&
+  firebaseConfig.apiKey !== "" &&
+  !firebaseConfig.apiKey.includes("...") &&
+  !firebaseConfig.apiKey.includes("YOUR_API_KEY");
 
 if (isCloudConfigured) {
   try {

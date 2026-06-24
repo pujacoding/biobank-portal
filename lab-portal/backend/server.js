@@ -56,7 +56,7 @@ const startServer = async () => {
   try {
     // Bootstrap tables & seeds
     await initDb();
-    
+
     app.listen(PORT, () => {
       console.log(`[SERVER] AURA Lab Portal API running on port ${PORT}`);
       console.log(`[SERVER] Local Health Check: http://localhost:${PORT}/api/status`);

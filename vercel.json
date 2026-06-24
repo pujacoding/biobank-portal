@@ -1,0 +1,9 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/lab/:path*", "destination": "/lab/:path*" },
+    { "source": "/lab", "destination": "/lab/index.html" },
+    { "source": "/lab/(.*)", "destination": "/lab/index.html" }
+  ]
+}
