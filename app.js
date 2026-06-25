@@ -17,6 +17,14 @@ let currentUser = null;
 
 // Global Cart State
 let requestCart = [];
+try {
+  const savedCart = localStorage.getItem('aura_request_cart');
+  if (savedCart) {
+    requestCart = JSON.parse(savedCart);
+  }
+} catch (e) {
+  console.warn("Failed to load requestCart from localStorage:", e);
+}
 
 // Global Relocation State
 let relocateMode = false;
@@ -24,7 +32,7 @@ let relocateSourceBarcode = null;
 
 // Global Reports Preview pagination state
 let previewPageIndex = 0;
-const previewPageSize = 5;
+const previewPageSize = 10;
 
 // Global pagination states for lists
 let catalogPageIndex = 0;
@@ -151,6 +159,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.body.classList.add('authenticated');
       updateProfileUI(currentUser);
       updateAdminMenuVisibility(currentUser.role);
+      updateRequestsBadge();
+      
+      const userTheme = currentUser.theme || localStorage.getItem('aura_theme_' + currentUser.username) || localStorage.getItem('aura_theme') || 'system';
+      applyTheme(userTheme);
     } catch (e) {
       currentUser = null;
       document.body.classList.remove('authenticated');
@@ -167,16 +179,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.body.classList.add('authenticated');
     updateProfileUI(currentUser);
     updateAdminMenuVisibility(currentUser.role);
+    updateRequestsBadge();
+    
+    const userTheme = localStorage.getItem('aura_theme_Alexander Scott') || localStorage.getItem('aura_theme') || 'system';
+    applyTheme(userTheme);
   }
   
   const dashBtn = document.querySelector('.nav-btn[data-tab="dashboard-tab"]');
   if (dashBtn) dashBtn.click();
 
-  // Render main telemetry and dashboard visuals on load
-  renderDashboardStats();
-  renderSVGCharts();
-
   // Initialize specific tab modules
+  initDashboardFilters();
   initTabs();
   initCatalog();
   initStorageGrid();
@@ -206,6 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initQCModalListeners();
   initStudyManagement();
   initPublications();
+  initResearchRequestsFilter();
   
   // Left Sidebar Collapse/Expand Toggle
   const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
@@ -240,6 +254,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
   
+  // Initialize request details modal
+  initRequestDetailsModal();
+  
   // Render submitted request histories in the UI ledger
   renderRequestsLedger();
   
@@ -263,6 +280,24 @@ async function refreshDatabaseCache() {
   if (auditPanel && auditPanel.classList.contains('active')) {
     renderAuditLogs();
   }
+
+  updateRequestsBadge();
+  updateCohortDiscoveryBadge();
+}
+
+function updateCohortDiscoveryBadge() {
+  const catalogCountBadge = document.getElementById('catalog-count-badge');
+  if (catalogCountBadge && specimensCache) {
+    catalogCountBadge.textContent = specimensCache.length;
+  }
+}
+
+function updateRequestsBadge() {
+  const requestsBadge = document.getElementById('requests-count-badge');
+  if (!requestsBadge) return;
+  let userRequests = requestsCache || [];
+  const pendingRequests = userRequests.filter(req => (req.status || '').toLowerCase() === 'pending');
+  requestsBadge.textContent = pendingRequests.length;
 }
 
 // ==========================================
@@ -291,6 +326,12 @@ function initThemeManager() {
     item.addEventListener('click', () => {
       const selectedTheme = item.getAttribute('data-theme');
       localStorage.setItem('aura_theme', selectedTheme);
+      if (currentUser) {
+        localStorage.setItem('aura_theme_' + currentUser.username, selectedTheme);
+        currentUser.theme = selectedTheme;
+        localStorage.setItem('aura_current_user', JSON.stringify(currentUser));
+        db.updateUserTheme(currentUser.id, selectedTheme).catch(console.error);
+      }
       applyTheme(selectedTheme);
       dropdown.classList.remove('show');
     });
@@ -389,9 +430,15 @@ function initTabs() {
         renderPublications();
       } else if (targetTab === 'storage-tab') {
         initStorageGrid();
-        document.getElementById('well-deposit-form-container').classList.add('hidden');
-        document.getElementById('well-data-content').classList.add('hidden');
-        document.getElementById('well-details-pane').querySelector('.well-placeholder-text').style.display = 'block';
+        const depositForm = document.getElementById('well-deposit-form-container');
+        if (depositForm) depositForm.classList.add('hidden');
+        const dataContent = document.getElementById('well-data-content');
+        if (dataContent) dataContent.classList.add('hidden');
+        const detailsPane = document.getElementById('well-details-pane');
+        if (detailsPane) {
+          const placeholder = detailsPane.querySelector('.well-placeholder-text');
+          if (placeholder) placeholder.style.display = 'block';
+        }
       } else if (targetTab === 'consent-tab') {
         populateConsentDonorDropdown();
         renderBlockchainLedger();
@@ -442,143 +489,780 @@ async function renderDashboardStats() {
 }
 
 function renderSVGCharts() {
-  renderDonutChart();
-  renderBarChart();
+  renderDashboard();
 }
 
-function renderDonutChart() {
-  const container = document.getElementById('donut-chart-container');
-  if (!container) return;
+function getCohortCategory(diagnosis) {
+  const diag = (diagnosis || '').toLowerCase();
+  if (diag.includes('healthy') || diag.includes('control')) return 'Healthy Control';
+  if (diag.includes('cancer') || diag.includes('tumor') || diag.includes('carcinoma') || diag.includes('malignan')) return 'Cancer';
+  if (diag.includes('diabetes') || diag.includes('diabetic')) return 'Diabetes';
+  if (diag.includes('cardio') || diag.includes('heart') || diag.includes('hypertension') || diag.includes('vascular')) return 'Cardiovascular Disease';
+  if (diag.includes('neuro') || diag.includes('alzheimer') || diag.includes('parkinson') || diag.includes('dementia') || diag.includes('sclerosis')) return 'Neurological Disorders';
+  if (diag.includes('rare') || diag.includes('genetic') || diag.includes('huntington') || diag.includes('cystic')) return 'Rare Disease';
+  return 'Other';
+}
 
-  const counts = { Blood: 0, Serum: 0, DNA: 0, Tissue: 0 };
-  specimensCache.forEach(s => {
-    if (counts[s.type] !== undefined) counts[s.type]++;
+function renderDashboard() {
+  // 1. Get current filters
+  const cohortFilter = document.getElementById('dash-filter-cohort');
+  const diseaseFilter = document.getElementById('dash-filter-disease');
+  const typeFilter = document.getElementById('dash-filter-sample-type');
+  const projectFilter = document.getElementById('dash-filter-project');
+  const dateStart = document.getElementById('dash-filter-date-start');
+  const dateEnd = document.getElementById('dash-filter-date-end');
+
+  const cohortVal = cohortFilter ? cohortFilter.value : 'all';
+  const diseaseVal = diseaseFilter ? diseaseFilter.value.toLowerCase().trim() : '';
+  const typeVal = typeFilter ? typeFilter.value : 'all';
+  const projectVal = projectFilter ? projectFilter.value : 'all';
+  const dateStartVal = dateStart ? dateStart.value : '';
+  const dateEndVal = dateEnd ? dateEnd.value : '';
+
+  // 2. Compute date boundaries
+  const startLimit = dateStartVal ? new Date(dateStartVal + 'T00:00:00') : null;
+  const endLimit = dateEndVal ? new Date(dateEndVal + 'T23:59:59.999') : null;
+  
+  const filterByDate = (dateStr) => {
+    if (!dateStr) return true;
+    const d = new Date(dateStr);
+    if (startLimit && d < startLimit) return false;
+    if (endLimit && d > endLimit) return false;
+    return true;
+  };
+
+  // 3. Project specimen barcode list if filtered
+  let allowedBarcodes = new Set();
+  if (projectVal !== 'all') {
+    const study = studiesCache.find(st => String(st.id) === String(projectVal));
+    if (study) {
+      requestsCache.forEach(req => {
+        if (req.irbCode === study.irb_code) {
+          (req.samples || []).forEach(sample => {
+            allowedBarcodes.add(sample.barcode);
+          });
+        }
+      });
+    }
+  }
+
+  // 4. Filter specimens
+  const filteredSpecimens = specimensCache.filter(s => {
+    const matchDate = filterByDate(s.createdAt);
+    const matchType = typeVal === 'all' || s.type === typeVal;
+    const matchCohort = cohortVal === 'all' || getCohortCategory(s.diagnosis) === cohortVal;
+    const matchDisease = !diseaseVal || (s.diagnosis && s.diagnosis.toLowerCase().includes(diseaseVal));
+    const matchProject = projectVal === 'all' || allowedBarcodes.has(s.barcode);
+    return matchDate && matchType && matchCohort && matchDisease && matchProject;
   });
+
+  // 5. Filter donors
+  const filteredDonors = donorsCache.filter(d => {
+    const matchDate = filterByDate(d.createdAt);
+    const matchCohort = cohortVal === 'all' || getCohortCategory(d.diagnosis) === cohortVal;
+    const matchDisease = !diseaseVal || (d.diagnosis && d.diagnosis.toLowerCase().includes(diseaseVal));
+    return matchDate && matchCohort && matchDisease;
+  });
+
+  // 6. Filter studies & requests
+  const filteredStudies = studiesCache.filter(st => filterByDate(st.created_at));
+  const filteredRequests = requestsCache.filter(req => filterByDate(req.createdAt));
+
+  // 7. Update top KPI card values
+  const statsTotalDonors = document.getElementById('stats-total-donors');
+  const statsTotalSpecimens = document.getElementById('stats-total-specimens');
+  const statsAvailableAliquots = document.getElementById('stats-available-aliquots');
+  const statsActiveConsents = document.getElementById('stats-active-consents');
+  const statsActiveProjects = document.getElementById('stats-active-projects');
+  const statsAvailableRequest = document.getElementById('stats-available-request');
+
+  if (statsTotalDonors) statsTotalDonors.textContent = donorsCache.length;
+  if (statsTotalSpecimens) statsTotalSpecimens.textContent = specimensCache.length;
+  if (statsAvailableAliquots) {
+    statsAvailableAliquots.textContent = specimensCache.filter(s => s.retrievalStatus === 'Stored').length;
+  }
+  if (statsActiveConsents) {
+    statsActiveConsents.textContent = donorsCache.filter(d => d.consentStatus === 'Active' || d.consentStatus === 'Verified').length;
+  }
+  if (statsActiveProjects) statsActiveProjects.textContent = studiesCache.length;
+  if (statsAvailableRequest) {
+    statsAvailableRequest.textContent = specimensCache.filter(s => s.retrievalStatus === 'Stored' && s.consent && (s.consent.academic || s.consent.genomic || s.consent.commercial)).length;
+  }
+
+  // 8. Render Section 1: Specimen Type Distribution
+  const typeCounts = {
+    'Blood': 0, 'Plasma': 0, 'Serum': 0, 'Buffy Coat': 0, 'PBMC': 0,
+    'DNA': 0, 'RNA': 0, 'Fresh Tissue': 0, 'FFPE Tissue': 0, 'Urine': 0,
+    'Saliva': 0, 'Other': 0
+  };
+  filteredSpecimens.forEach(s => {
+    const type = s.type;
+    if (typeCounts[type] !== undefined) {
+      typeCounts[type]++;
+    } else {
+      typeCounts['Other']++;
+    }
+  });
+
+  const specimenColors = {
+    'Blood': 'var(--accent-red)',
+    'Plasma': 'var(--accent-orange)',
+    'Serum': '#eab308',
+    'Buffy Coat': '#3b82f6',
+    'PBMC': '#6366f1',
+    'DNA': 'var(--accent-cyan)',
+    'RNA': 'var(--accent-teal)',
+    'Fresh Tissue': 'var(--accent-purple)',
+    'FFPE Tissue': '#ec4899',
+    'Urine': '#10b981',
+    'Saliva': '#8b5cf6',
+    'Other': '#6b7280'
+  };
+
+  drawDonutChart('specimen-pie-container', typeCounts, specimenColors);
+  drawBarChart('specimen-bar-container', typeCounts, specimenColors);
+
+  // 9. Render Section 2: Cohort Distribution
+  const cohortCounts = {
+    'Healthy Control': 0,
+    'Cancer': 0,
+    'Diabetes': 0,
+    'Cardiovascular Disease': 0,
+    'Neurological Disorders': 0,
+    'Rare Disease': 0,
+    'Other': 0
+  };
+  filteredSpecimens.forEach(s => {
+    const cat = getCohortCategory(s.diagnosis);
+    if (cohortCounts[cat] !== undefined) {
+      cohortCounts[cat]++;
+    } else {
+      cohortCounts['Other']++;
+    }
+  });
+
+  const cohortColors = {
+    'Healthy Control': 'var(--accent-teal)',
+    'Cancer': 'var(--accent-red)',
+    'Diabetes': 'var(--accent-orange)',
+    'Cardiovascular Disease': '#3b82f6',
+    'Neurological Disorders': 'var(--accent-purple)',
+    'Rare Disease': 'var(--accent-cyan)',
+    'Other': '#6b7280'
+  };
+
+  drawDonutChart('cohort-donut-container', cohortCounts, cohortColors);
+  drawBarChart('cohort-bar-container', cohortCounts, cohortColors);
+
+  // 10. Render Section 3: Sample Availability Matrix
+  const matrixData = {};
+  filteredSpecimens.forEach(s => {
+    const type = s.type || 'Other';
+    if (!matrixData[type]) {
+      matrixData[type] = { total: 0, available: 0, reserved: 0, released: 0 };
+    }
+    matrixData[type].total++;
+    if (s.retrievalStatus === 'Stored') {
+      matrixData[type].available++;
+    } else if (s.retrievalStatus === 'Reserved') {
+      matrixData[type].reserved++;
+    } else if (s.retrievalStatus === 'Released') {
+      matrixData[type].released++;
+    }
+  });
+
+  const matrixTbody = document.getElementById('stats-availability-matrix-tbody');
+  if (matrixTbody) {
+    matrixTbody.innerHTML = '';
+    const entries = Object.entries(matrixData);
+    if (entries.length === 0) {
+      matrixTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 12px 0;">No specimens match the active filters.</td></tr>';
+    } else {
+      entries.forEach(([type, counts]) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>${type}</strong></td>
+          <td style="font-family: monospace;">${counts.total}</td>
+          <td style="font-family: monospace; color: var(--accent-teal);">${counts.available}</td>
+          <td style="font-family: monospace; color: var(--accent-orange);">${counts.reserved}</td>
+          <td style="font-family: monospace; color: var(--accent-purple);">${counts.released}</td>
+        `;
+        matrixTbody.appendChild(tr);
+      });
+    }
+  }
+
+  // 11. Render Section 4: Consent Analytics
+  const totalD = filteredDonors.length;
+  let generalCount = 0;
+  let genomicsCount = 0;
+  let sharingCount = 0;
+  let commercialCount = 0;
+  let internationalCount = 0;
+
+  filteredDonors.forEach(d => {
+    if (d.academic || d.consentStatus === 'Active') generalCount++;
+    if (d.genomic) genomicsCount++;
+    if (d.dataSharing) sharingCount++;
+    if (d.commercial) commercialCount++;
+    if (d.academic && d.genomic) internationalCount++;
+  });
+
+  const renderConsentBar = (label, count) => {
+    const pct = totalD > 0 ? Math.round((count / totalD) * 100) : 0;
+    return `
+      <div style="margin-bottom: 8px;">
+        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+          <span style="color: var(--text-secondary); font-weight: 500;">${label}</span>
+          <span style="color: var(--text-primary); font-weight: 700; font-family: monospace;">${count} (${pct}%)</span>
+        </div>
+        <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+          <div style="height: 100%; width: ${pct}%; background: var(--accent-teal); transition: width 0.5s ease;"></div>
+        </div>
+      </div>
+    `;
+  };
+
+  const consentContainer = document.getElementById('stats-consent-analytics-container');
+  if (consentContainer) {
+    consentContainer.innerHTML = `
+      ${renderConsentBar('General Research Consent', generalCount)}
+      ${renderConsentBar('Genomics Consent', genomicsCount)}
+      ${renderConsentBar('Data Sharing Consent', sharingCount)}
+      ${renderConsentBar('Commercial Use Consent', commercialCount)}
+      ${renderConsentBar('International Collaboration Consent', internationalCount)}
+    `;
+  }
+
+  // 12. Render Section 5: Omics Data Availability
+  const omicsTbody = document.getElementById('stats-omics-availability-tbody');
+  if (omicsTbody) {
+    const dnaLen = filteredSpecimens.filter(s => s.type === 'DNA').length;
+    const rnaLen = filteredSpecimens.filter(s => s.type === 'RNA').length;
+    const proteinLen = filteredSpecimens.filter(s => s.type === 'Serum' || s.type === 'Plasma').length;
+    
+    omicsTbody.innerHTML = `
+      <tr>
+        <td><strong>Genomics (WGS / Exome)</strong></td>
+        <td style="font-family: monospace;">${dnaLen} datasets</td>
+        <td style="font-family: monospace; color: var(--accent-cyan);">${dnaLen * 24} records</td>
+      </tr>
+      <tr>
+        <td><strong>Transcriptomics (RNA-Seq)</strong></td>
+        <td style="font-family: monospace;">${rnaLen} datasets</td>
+        <td style="font-family: monospace; color: var(--accent-teal);">${rnaLen * 16} records</td>
+      </tr>
+      <tr>
+        <td><strong>Proteomics (Mass Spectrometry)</strong></td>
+        <td style="font-family: monospace;">${proteinLen} datasets</td>
+        <td style="font-family: monospace; color: var(--accent-purple);">${proteinLen * 48} records</td>
+      </tr>
+    `;
+  }
+
+  // 13. Render Section 6: Sample Lifecycle Status (Funnel)
+  const collected = filteredSpecimens.length;
+  const processed = filteredSpecimens.filter(s => s.qcStatus === 'Verified' || s.qcStatus === 'Passed' || s.retrievalStatus === 'Released' || s.retrievalStatus === 'Reserved').length;
+  const stored = filteredSpecimens.filter(s => s.retrievalStatus === 'Stored' || s.retrievalStatus === 'Reserved').length;
+  const distributed = filteredSpecimens.filter(s => s.retrievalStatus === 'Released').length;
+
+  const funnelContainer = document.getElementById('lifecycle-funnel-container');
+  if (funnelContainer) {
+    const getFunnelBar = (label, count, max, color) => {
+      const pct = max > 0 ? Math.round((count / max) * 100) : 0;
+      return `
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+          <span style="font-size: 11px; font-weight: 600; color: var(--text-secondary); width: 80px; text-align: right;">${label}</span>
+          <div style="flex: 1; height: 20px; background: var(--bg-tertiary); border-radius: 4px; overflow: hidden; position: relative;">
+            <div style="height: 100%; width: ${pct}%; background: ${color}; transition: width 0.5s ease; border-radius: 4px 0 0 4px;"></div>
+            <span style="position: absolute; left: 10px; top: 3px; font-size: 10px; font-weight: 700; color: #fff; font-family: monospace;">${count} (${pct}%)</span>
+          </div>
+        </div>
+      `;
+    };
+    funnelContainer.innerHTML = `
+      ${getFunnelBar('Collected', collected, collected, 'var(--accent-cyan)')}
+      ${getFunnelBar('Processed (QC)', processed, collected, 'var(--accent-teal)')}
+      ${getFunnelBar('Stored', stored, collected, 'var(--accent-orange)')}
+      ${getFunnelBar('Distributed', distributed, collected, 'var(--accent-purple)')}
+    `;
+  }
+
+  // 14. Render Section 7: Research Access Requests Summary
+  let reqPending = 0;
+  let reqApproved = 0;
+  let reqRejected = 0;
+  let reqAllocated = 0;
+
+  filteredRequests.forEach(req => {
+    const status = (req.status || '').toLowerCase();
+    if (status === 'pending') reqPending++;
+    else if (status === 'approved') reqApproved++;
+    else if (status === 'rejected') reqRejected++;
+    else if (status === 'allocated' || status === 'released') reqAllocated++;
+  });
+  
+  const requestsSummaryContainer = document.getElementById('stats-requests-summary-container');
+  if (requestsSummaryContainer) {
+    const renderStatBox = (label, count) => `
+      <div style="background: var(--bg-primary); border: 1px solid var(--border-color); padding: 10px; border-radius: 8px;">
+        <span style="font-size: 9px; text-transform: uppercase; color: var(--text-secondary); display: block; font-weight: 700; margin-bottom: 4px;">${label}</span>
+        <strong style="font-size: 16px; color: var(--text-primary); font-family: monospace;">${count}</strong>
+      </div>
+    `;
+    requestsSummaryContainer.innerHTML = `
+      ${renderStatBox('Total', filteredRequests.length)}
+      ${renderStatBox('Pending', reqPending)}
+      ${renderStatBox('Approved', reqApproved)}
+      ${renderStatBox('Allocated', reqAllocated)}
+      ${renderStatBox('Rejected', reqRejected)}
+    `;
+  }
+
+  // 15. Render Section 8: Research Impact Metrics
+  const totalPubs = publicationsCache.filter(pub => {
+    if (!pub.linked_study_id) return filterByDate(pub.created_at);
+    const study = studiesCache.find(st => String(st.id) === String(pub.linked_study_id));
+    return study ? filterByDate(study.created_at) : filterByDate(pub.created_at);
+  }).length;
+
+  const approvedRequests = filteredRequests.filter(req => req.status === 'Approved' || req.status === 'Allocated' || req.status === 'Released');
+  const totalRequestedSamples = approvedRequests.reduce((sum, req) => sum + (req.samples ? req.samples.length : 0), 0);
+  const avgSpecimens = approvedRequests.length > 0 ? (totalRequestedSamples / approvedRequests.length).toFixed(1) : '0.0';
+
+  const impactContainer = document.getElementById('stats-impact-container');
+  if (impactContainer) {
+    impactContainer.innerHTML = `
+      <div style="background: var(--bg-primary); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; text-align: center;">
+        <span style="font-size: 9px; text-transform: uppercase; color: var(--text-secondary); display: block; font-weight: 700; margin-bottom: 6px;">Publications</span>
+        <strong style="font-size: 20px; color: var(--accent-cyan); font-family: monospace;">${totalPubs}</strong>
+      </div>
+      <div style="background: var(--bg-primary); border: 1px solid var(--border-color); padding: 12px; border-radius: 8px; text-align: center;">
+        <span style="font-size: 9px; text-transform: uppercase; color: var(--text-secondary); display: block; font-weight: 700; margin-bottom: 6px;">Avg. Specimens / Approved Request</span>
+        <strong style="font-size: 20px; color: var(--accent-teal); font-family: monospace;">${avgSpecimens}</strong>
+      </div>
+    `;
+  }
+
+  // 16. Render Section 9: Recent Research Activity
+  const activityList = [];
+  filteredRequests.forEach(req => {
+    activityList.push({
+      category: 'Access Request',
+      details: `${req.researcherName} requested ${req.samples ? req.samples.length : 0} specimens (IRB: ${req.irbCode})`,
+      timestamp: req.createdAt,
+      status: req.status
+    });
+  });
+
+  auditCache.forEach(log => {
+    if (filterByDate(log.timestamp)) {
+      activityList.push({
+        category: log.action || 'Audit Event',
+        details: `${log.username} (${log.role}): ${log.details}`,
+        timestamp: log.timestamp,
+        status: 'Logged'
+      });
+    }
+  });
+
+  activityList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const recentActivity = activityList.slice(0, 10);
+
+  const recentActivityTbody = document.getElementById('stats-recent-activity-tbody');
+  if (recentActivityTbody) {
+    recentActivityTbody.innerHTML = '';
+    if (recentActivity.length === 0) {
+      recentActivityTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 12px 0;">No recent research activity found.</td></tr>`;
+    } else {
+      recentActivity.forEach(act => {
+        const tr = document.createElement('tr');
+        const dateStr = new Date(act.timestamp).toLocaleString();
+        
+        let statusBadgeClass = 'orange-bg';
+        if (act.status === 'Approved' || act.status === 'Logged' || act.status === 'Active') {
+          statusBadgeClass = 'green-bg';
+        } else if (act.status === 'Rejected' || act.status === 'Failed') {
+          statusBadgeClass = 'red-bg';
+        } else if (act.status === 'Allocated' || act.status === 'Released') {
+          statusBadgeClass = 'cyan-bg';
+        }
+        
+        tr.innerHTML = `
+          <td><span class="badge" style="background: rgba(0, 242, 254, 0.05); color: var(--accent-cyan); font-size:10px;">${act.category}</span></td>
+          <td><span style="font-size:12px; color:var(--text-secondary);">${act.details}</span></td>
+          <td style="font-family: monospace; font-size:11px; white-space:nowrap;">${dateStr}</td>
+          <td><span class="badge ${statusBadgeClass}">${act.status}</span></td>
+        `;
+        recentActivityTbody.appendChild(tr);
+      });
+    }
+  }
+
+  // 17. Render Secure Access Request Ledger
+  renderRequestsLedger(filteredRequests);
+}
+
+function drawDonutChart(containerId, counts, colors) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
 
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   if (total === 0) {
-    container.innerHTML = "<p style='color: var(--text-secondary); font-size:12px;'>No specimens in database.</p>";
+    container.innerHTML = `<svg viewBox="0 0 140 140" style="width: 100%; height: 100%;"><text x="70" y="75" text-anchor="middle" font-size="9" fill="var(--text-secondary)">No records</text></svg>`;
     return;
   }
 
-  const colors = {
-    Blood: 'var(--accent-red)',
-    Serum: 'var(--accent-orange)',
-    DNA: 'var(--accent-cyan)',
-    Tissue: 'var(--accent-purple)'
-  };
-
-  const r = 50;
+  const r = 40;
   const circ = 2 * Math.PI * r;
   let cumulativePercent = 0;
   
-  let svgContent = `<svg viewBox="0 0 160 160" style="width: 130px; height: 130px;">
-    <circle cx="80" cy="80" r="50" fill="transparent" stroke="var(--bg-tertiary)" stroke-width="14"/>`;
+  let svgContent = `<svg viewBox="0 0 140 140" style="width: 100%; height: 100%;">
+    <circle cx="70" cy="70" r="${r}" fill="transparent" stroke="var(--bg-tertiary)" stroke-width="10"/>`;
 
-  for (const [type, count] of Object.entries(counts)) {
+  for (const [key, count] of Object.entries(counts)) {
     if (count === 0) continue;
     const percent = count / total;
     const strokeLength = percent * circ;
-    const strokeOffset = circ - (cumulativePercent * circ);
+    const color = colors[key] || '#9ca3af';
 
     svgContent += `
-      <circle cx="80" cy="80" r="${r}" fill="transparent"
-        stroke="${colors[type]}"
-        stroke-width="14"
+      <circle cx="70" cy="70" r="${r}" fill="transparent"
+        stroke="${color}"
+        stroke-width="10"
         stroke-dasharray="${strokeLength} ${circ}"
         stroke-dashoffset="-${cumulativePercent * circ}"
-        transform="rotate(-90 80 80)"
+        transform="rotate(-90 70 70)"
         style="transition: stroke-dashoffset 0.5s ease;"
       />`;
 
     cumulativePercent += percent;
   }
 
-  // Inner hole labels
   svgContent += `
-    <circle cx="80" cy="80" r="40" fill="var(--bg-secondary)"/>
-    <text x="80" y="78" text-anchor="middle" font-size="16" font-weight="700" fill="var(--text-primary)" font-family="var(--font-title)">${total}</text>
-    <text x="80" y="92" text-anchor="middle" font-size="9" font-weight="600" fill="var(--text-secondary)" font-family="var(--font-body)">SAMPLES</text>
-  </svg>`;
-
-  // Build HTML Legend on the right side
-  let legendHTML = `<div style="display: flex; flex-direction: column; gap: 8px; justify-content: center; margin-left: 24px;">`;
-  for (const [type, count] of Object.entries(counts)) {
-    const color = colors[type];
-    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-    legendHTML += `
-      <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
-        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${color};"></span>
-        <span style="color: var(--text-secondary); min-width: 50px;">${type}:</span>
-        <strong style="color: var(--text-primary); font-family: monospace;">${count}</strong>
-        <span style="color: var(--text-tertiary); font-size: 10px;">(${pct}%)</span>
-      </div>`;
-  }
-  legendHTML += `</div>`;
-
-  container.innerHTML = `<div style="display: flex; align-items: center; width: 100%; justify-content: center;">${svgContent}${legendHTML}</div>`;
-}
-
-function renderBarChart() {
-  const container = document.getElementById('bar-chart-container');
-  if (!container) return;
-
-  const consentCounts = { Academic: 0, Genomic: 0, Commercial: 0 };
-  specimensCache.forEach(s => {
-    if (s.consent.academic) consentCounts.Academic++;
-    if (s.consent.genomic) consentCounts.Genomic++;
-    if (s.consent.commercial) consentCounts.Commercial++;
-  });
-
-  const maxVal = Math.max(...Object.values(consentCounts), 1);
-  const width = 260;
-  
-  const colors = {
-    Academic: 'var(--accent-teal)',
-    Genomic: 'var(--accent-cyan)',
-    Commercial: 'var(--accent-purple)'
-  };
-
-  let svgContent = `<svg viewBox="0 0 ${width} 170" style="width: 100%; height: 130px;">
-    <!-- Horizontal Grid Lines -->
-    <line x1="40" y1="20" x2="${width - 10}" y2="20" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"/>
-    <line x1="40" y1="70" x2="${width - 10}" y2="70" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"/>
-    <line x1="40" y1="120" x2="${width - 10}" y2="120" stroke="rgba(255,255,255,0.03)" stroke-dasharray="3"/>
-    <line x1="40" y1="140" x2="${width - 10}" y2="140" stroke="rgba(255,255,255,0.1)"/>
-  `;
-
-  let x = 60;
-  const categories = Object.keys(consentCounts);
-  categories.forEach(key => {
-    const val = consentCounts[key];
-    const barHeight = (val / maxVal) * 100;
-    const y = 140 - barHeight;
-    const color = colors[key];
-
-    svgContent += `
-      <!-- Bar representation -->
-      <rect x="${x}" y="${y}" width="30" height="${barHeight}" rx="4" fill="${color}" style="transition: all 0.5s ease;" />
-      <!-- Numeric badge -->
-      <text x="${x + 15}" y="${y - 6}" text-anchor="middle" font-size="10" font-weight="700" fill="var(--text-primary)" font-family="monospace">${val}</text>
-      <!-- Label -->
-      <text x="${x + 15}" y="156" text-anchor="middle" font-size="9" font-weight="600" fill="var(--text-secondary)" font-family="var(--font-body)">${key.slice(0, 3).toUpperCase()}</text>
-    `;
-    x += 65;
-  });
-
-  // Y-axis labels
-  svgContent += `
-    <text x="32" y="24" text-anchor="end" font-size="9" fill="var(--text-tertiary)" font-family="monospace">${maxVal}</text>
-    <text x="32" y="74" text-anchor="end" font-size="9" fill="var(--text-tertiary)" font-family="monospace">${Math.round(maxVal / 2)}</text>
-    <text x="32" y="144" text-anchor="end" font-size="9" fill="var(--text-tertiary)" font-family="monospace">0</text>
+    <circle cx="70" cy="70" r="32" fill="var(--bg-secondary)"/>
+    <text x="70" y="68" text-anchor="middle" font-size="12" font-weight="700" fill="var(--text-primary)" font-family="var(--font-title)">${total}</text>
+    <text x="70" y="80" text-anchor="middle" font-size="7" font-weight="600" fill="var(--text-secondary)" font-family="var(--font-body)">TOTAL</text>
   </svg>`;
 
   container.innerHTML = svgContent;
 }
 
+function drawBarChart(containerId, counts, colors) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const sortedData = Object.entries(counts).filter(([_, c]) => c > 0).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const maxCount = Math.max(...Object.values(counts), 1);
+  
+  let svgContent = `<svg viewBox="0 0 200 150" style="width: 100%; height: 130px;">`;
+  let y = 10;
+  
+  sortedData.forEach(([key, count]) => {
+    const barWidth = (count / maxCount) * 110;
+    const color = colors[key] || '#9ca3af';
+    
+    svgContent += `
+      <text x="5" y="${y + 9}" font-size="8" font-weight="500" fill="var(--text-secondary)">${key.slice(0, 10)}</text>
+      <rect x="65" y="${y}" width="${barWidth}" height="10" rx="3" fill="${color}"/>
+      <text x="${70 + barWidth}" y="${y + 9}" font-size="8" font-weight="700" fill="var(--text-primary)" font-family="monospace">${count}</text>
+    `;
+    y += 26;
+  });
+
+  if (sortedData.length === 0) {
+    svgContent += `<text x="100" y="75" text-anchor="middle" font-size="9" fill="var(--text-secondary)">No records found</text>`;
+  }
+
+  svgContent += `</svg>`;
+  container.innerHTML = svgContent;
+}
+
+let selectedDatePreset = '30days';
+
+function getPresetDates(preset) {
+  const today = new Date();
+  let start = new Date();
+  let end = new Date();
+  
+  end.setHours(23, 59, 59, 999);
+
+  switch (preset) {
+    case 'today':
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'yesterday':
+      start.setDate(today.getDate() - 1);
+      start.setHours(0, 0, 0, 0);
+      end.setDate(today.getDate() - 1);
+      end.setHours(23, 59, 59, 999);
+      break;
+    case '7days':
+      start.setDate(today.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+      break;
+    case '30days':
+      start.setDate(today.getDate() - 29);
+      start.setHours(0, 0, 0, 0);
+      break;
+    case 'thismonth':
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+      break;
+    case 'lastmonth':
+      start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      end = new Date(today.getFullYear(), today.getMonth(), 0);
+      end.setHours(23, 59, 59, 999);
+      break;
+    default:
+      return null;
+  }
+  return { start, end };
+}
+
+function formatDateLabel(start, end) {
+  const opt = { month: 'short', day: 'numeric', year: 'numeric' };
+  return `${start.toLocaleDateString('en-US', opt)} - ${end.toLocaleDateString('en-US', opt)}`;
+}
+
+function validateDateRangeInput(startStr, endStr) {
+  const errorEl = document.getElementById('date-validation-error');
+  if (errorEl) {
+    errorEl.style.display = 'none';
+    errorEl.textContent = '';
+  }
+
+  if (!startStr || !endStr) {
+    if (errorEl) {
+      errorEl.textContent = 'Please select both start and end dates.';
+      errorEl.style.display = 'block';
+    }
+    return false;
+  }
+
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  
+  if (end < start) {
+    if (errorEl) {
+      errorEl.textContent = 'End date cannot be earlier than start date.';
+      errorEl.style.display = 'block';
+    }
+    return false;
+  }
+
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  
+  const isAdmin = currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Super Admin' || currentUser.role === 'Lab Admin');
+  
+  if (!isAdmin) {
+    if (start > today || end > today) {
+      if (errorEl) {
+        errorEl.textContent = 'Future dates are only allowed for administrators.';
+        errorEl.style.display = 'block';
+      }
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function updateDateInputMaxAttributes() {
+  const dateStart = document.getElementById('dash-filter-date-start');
+  const dateEnd = document.getElementById('dash-filter-date-end');
+  if (!dateStart || !dateEnd) return;
+
+  const isAdmin = currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Super Admin' || currentUser.role === 'Lab Admin');
+  
+  if (!isAdmin) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    dateStart.setAttribute('max', todayStr);
+    dateEnd.setAttribute('max', todayStr);
+  } else {
+    dateStart.removeAttribute('max');
+    dateEnd.removeAttribute('max');
+  }
+}
+
+function applySelectedPreset(preset) {
+  selectedDatePreset = preset;
+  
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    if (btn.getAttribute('data-preset') === preset) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  const customDiv = document.getElementById('custom-date-inputs');
+  const dateStart = document.getElementById('dash-filter-date-start');
+  const dateEnd = document.getElementById('dash-filter-date-end');
+  const pickerBtnLabel = document.getElementById('selected-date-range-text');
+  const headerLabel = document.getElementById('dashboard-range-text');
+
+  if (preset === 'custom') {
+    if (customDiv) customDiv.style.display = 'flex';
+    return;
+  }
+
+  if (customDiv) customDiv.style.display = 'none';
+
+  const range = getPresetDates(preset);
+  if (range) {
+    const startStr = range.start.toISOString().split('T')[0];
+    const endStr = range.end.toISOString().split('T')[0];
+    
+    if (dateStart) dateStart.value = startStr;
+    if (dateEnd) dateEnd.value = endStr;
+    
+    const labelText = preset.charAt(0).toUpperCase() + preset.slice(1).replace('days', ' Days').replace('thismonth', 'This Month').replace('lastmonth', 'Last Month');
+    const formattedLabel = labelText.replace('7 Days', 'Last 7 Days').replace('30 Days', 'Last 30 Days');
+    
+    if (pickerBtnLabel) pickerBtnLabel.textContent = formattedLabel;
+    if (headerLabel) {
+      headerLabel.textContent = `${formattedLabel} (${formatDateLabel(range.start, range.end)})`;
+    }
+    
+    const dropdown = document.getElementById('date-picker-dropdown');
+    if (dropdown) dropdown.style.display = 'none';
+    
+    renderDashboard();
+  }
+}
+
+function initDashboardFilters() {
+  const cohortFilter = document.getElementById('dash-filter-cohort');
+  const diseaseFilter = document.getElementById('dash-filter-disease');
+  const typeFilter = document.getElementById('dash-filter-sample-type');
+  const projectFilter = document.getElementById('dash-filter-project');
+  const dateStart = document.getElementById('dash-filter-date-start');
+  const dateEnd = document.getElementById('dash-filter-date-end');
+  const btnReset = document.getElementById('btn-reset-dashboard-filters');
+  const btnClear = document.getElementById('btn-clear-dashboard-filters');
+  const btnRefresh = document.getElementById('btn-refresh-dashboard');
+  
+  const pickerBtn = document.getElementById('date-range-picker-btn');
+  const dropdown = document.getElementById('date-picker-dropdown');
+  const applyCustomBtn = document.getElementById('apply-custom-date-btn');
+
+  const onFilterChange = () => {
+    renderDashboard();
+  };
+
+  if (cohortFilter) cohortFilter.addEventListener('change', onFilterChange);
+  if (diseaseFilter) diseaseFilter.addEventListener('input', onFilterChange);
+  if (typeFilter) typeFilter.addEventListener('change', onFilterChange);
+  if (projectFilter) projectFilter.addEventListener('change', onFilterChange);
+
+  if (pickerBtn && dropdown) {
+    pickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isVisible = dropdown.style.display === 'flex';
+      dropdown.style.display = isVisible ? 'none' : 'flex';
+      updateDateInputMaxAttributes();
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (dropdown && !dropdown.contains(e.target) && pickerBtn && !pickerBtn.contains(e.target)) {
+      dropdown.style.display = 'none';
+    }
+  });
+
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      applySelectedPreset(btn.getAttribute('data-preset'));
+    });
+  });
+
+  if (applyCustomBtn) {
+    applyCustomBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const startStr = dateStart ? dateStart.value : '';
+      const endStr = dateEnd ? dateEnd.value : '';
+      
+      if (!validateDateRangeInput(startStr, endStr)) return;
+      
+      const start = new Date(startStr);
+      const end = new Date(endStr);
+      const formatted = formatDateLabel(start, end);
+      
+      const pickerBtnLabel = document.getElementById('selected-date-range-text');
+      const headerLabel = document.getElementById('dashboard-range-text');
+      
+      if (pickerBtnLabel) pickerBtnLabel.textContent = 'Custom Range';
+      if (headerLabel) {
+        headerLabel.textContent = `Custom Range (${formatted})`;
+      }
+      
+      if (dropdown) dropdown.style.display = 'none';
+      renderDashboard();
+    });
+  }
+
+  applySelectedPreset('30days');
+
+  if (btnClear) {
+    btnClear.addEventListener('click', () => {
+      if (cohortFilter) cohortFilter.value = 'all';
+      if (diseaseFilter) diseaseFilter.value = '';
+      if (typeFilter) typeFilter.value = 'all';
+      if (projectFilter) projectFilter.value = 'all';
+      applySelectedPreset('30days');
+    });
+  }
+
+  if (btnReset) {
+    btnReset.addEventListener('click', () => {
+      if (cohortFilter) cohortFilter.value = 'all';
+      if (diseaseFilter) diseaseFilter.value = '';
+      if (typeFilter) typeFilter.value = 'all';
+      if (projectFilter) projectFilter.value = 'all';
+      applySelectedPreset('30days');
+    });
+  }
+
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', async () => {
+      btnRefresh.disabled = true;
+      btnRefresh.innerHTML = '<span>🔄</span> Refreshing...';
+      try {
+        await refreshDatabaseCache();
+        renderDashboard();
+      } catch (err) {
+        console.error("Error refreshing dashboard:", err);
+      } finally {
+        btnRefresh.disabled = false;
+        btnRefresh.innerHTML = '<span>🔄</span> Refresh Dashboard';
+      }
+    });
+  }
+
+  populateDashboardProjectFilter();
+}
+
+function populateDashboardProjectFilter() {
+  const projectFilter = document.getElementById('dash-filter-project');
+  if (!projectFilter) return;
+
+  const currentSelection = projectFilter.value || 'all';
+  projectFilter.innerHTML = '<option value="all">All Projects</option>';
+  
+  studiesCache.forEach(st => {
+    const opt = document.createElement('option');
+    opt.value = st.id;
+    opt.textContent = `${st.title} (${st.irb_code})`;
+    projectFilter.appendChild(opt);
+  });
+
+  projectFilter.value = currentSelection;
+}
+
 // ==========================================
 // 3. Specimen Catalog & Cohort Builder
-// ==========================================
 function initCatalog() {
   const filterType = document.getElementById('filter-sample-type');
   const filterDiag = document.getElementById('filter-diagnosis');
@@ -727,6 +1411,8 @@ function renderCatalogTable(data) {
     btnPrev.onclick = () => {
       catalogPageIndex--;
       renderCatalogTable(data);
+      const viewport = document.querySelector('.content-viewport');
+      if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
     };
   }
   if (btnNext) {
@@ -734,6 +1420,8 @@ function renderCatalogTable(data) {
     btnNext.onclick = () => {
       catalogPageIndex++;
       renderCatalogTable(data);
+      const viewport = document.querySelector('.content-viewport');
+      if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
     };
   }
 
@@ -889,9 +1577,15 @@ function initStorageGrid() {
               initStorageGrid();
               
               // Reset detail panes
-              document.getElementById('well-deposit-form-container').classList.add('hidden');
-              document.getElementById('well-data-content').classList.add('hidden');
-              document.getElementById('well-details-pane').querySelector('.well-placeholder-text').style.display = 'block';
+              const depositForm = document.getElementById('well-deposit-form-container');
+              if (depositForm) depositForm.classList.add('hidden');
+              const dataContent = document.getElementById('well-data-content');
+              if (dataContent) dataContent.classList.add('hidden');
+              const detailsPane = document.getElementById('well-details-pane');
+              if (detailsPane) {
+                const placeholder = detailsPane.querySelector('.well-placeholder-text');
+                if (placeholder) placeholder.style.display = 'block';
+              }
               
               alert(`Success: Specimen [${barcodeToMove}] relocated to Well [${wellId}] successfully.`);
             } catch (err) {
@@ -979,8 +1673,13 @@ function initStorageGrid() {
         initStorageGrid();
         
         // Reset panel view
-        document.getElementById('well-deposit-form-container').classList.add('hidden');
-        document.getElementById('well-details-pane').querySelector('.well-placeholder-text').style.display = 'block';
+        const depositForm = document.getElementById('well-deposit-form-container');
+        if (depositForm) depositForm.classList.add('hidden');
+        const detailsPane = document.getElementById('well-details-pane');
+        if (detailsPane) {
+          const placeholder = detailsPane.querySelector('.well-placeholder-text');
+          if (placeholder) placeholder.style.display = 'block';
+        }
         
         depositForm.reset();
         alert(`Success: Specimen [${barcode}] has been successfully deposited in Well [${wellId}] under compliance rules.`);
@@ -2812,9 +3511,22 @@ function getFilteredRecords(reportType) {
   let headers = [];
   let rawRecords = [];
   
+  const dateStart = document.getElementById('dash-filter-date-start');
+  const dateEnd = document.getElementById('dash-filter-date-end');
+  const startLimit = dateStart && dateStart.value ? new Date(dateStart.value + 'T00:00:00') : null;
+  const endLimit = dateEnd && dateEnd.value ? new Date(dateEnd.value + 'T23:59:59.999') : null;
+
+  const isWithinDateRange = (dateStr) => {
+    if (!dateStr) return true;
+    const d = new Date(dateStr);
+    if (startLimit && d < startLimit) return false;
+    if (endLimit && d > endLimit) return false;
+    return true;
+  };
+  
   if (reportType === 'specimens') {
     headers = ["Barcode", "Type", "Diagnosis", "Gender", "Age", "Location", "Quality", "Consent"];
-    rawRecords = specimensCache.map(s => {
+    rawRecords = specimensCache.filter(s => isWithinDateRange(s.createdAt)).map(s => {
       const consents = [];
       if (s.consent.academic) consents.push("ACA");
       if (s.consent.genomic) consents.push("GEN");
@@ -2830,7 +3542,7 @@ function getFilteredRecords(reportType) {
     });
   } else if (reportType === 'donors') {
     headers = ["Donor ID", "Diagnosis", "Academic", "Genomic", "Commercial"];
-    rawRecords = donorsCache.map(d => {
+    rawRecords = donorsCache.filter(d => isWithinDateRange(d.createdAt)).map(d => {
       const acad = d.academic ? "✔ Enabled" : "✕ Disallowed";
       const geno = d.genomic ? "✔ Enabled" : "✕ Disallowed";
       const comm = d.commercial ? "✔ Enabled" : "✕ Disallowed";
@@ -2843,19 +3555,20 @@ function getFilteredRecords(reportType) {
     });
   } else if (reportType === 'requests') {
     headers = ["Request ID", "Researcher", "Institution", "IRB Code", "Samples", "Status"];
-    rawRecords = requestsCache.map(r => {
-      const idSlice = r.requestId.slice(0, 12);
-      const samplesStr = `${r.samples.length} vial(s)`;
+    rawRecords = (requestsCache || []).filter(r => isWithinDateRange(r.createdAt)).map(r => {
+      const idSlice = r.requestId ? r.requestId.slice(0, 12) : '';
+      const samplesCount = (r.samples || []).length;
+      const samplesStr = `${samplesCount} vial(s)`;
       return {
         id: idSlice,
         preview: [idSlice, r.researcherName, r.institution, r.irbCode, samplesStr, "Approved"],
-        csv: [r.requestId, `"${r.researcherName}"`, `"${r.institution}"`, r.irbCode, r.samples.length, "Approved", r.createdAt],
+        csv: [r.requestId, `"${r.researcherName}"`, `"${r.institution}"`, r.irbCode, samplesCount, "Approved", r.createdAt],
         csvHeaders: ["Request ID", "Researcher", "Institution", "IRB Code", "Samples Count", "Status", "Submitted At"]
       };
     });
   } else if (reportType === 'blockchain') {
     headers = ["Block", "Timestamp", "Hash", "Donor ID", "Change Payload"];
-    rawRecords = blockchainCache.map(b => {
+    rawRecords = blockchainCache.filter(b => isWithinDateRange(b.timestamp)).map(b => {
       const blockNum = `#${b.index}`;
       const dateStr = new Date(b.timestamp).toLocaleDateString() + ' ' + new Date(b.timestamp).toTimeString().slice(0, 5);
       const hashSlice = b.txHash.slice(0, 10) + "...";
@@ -3007,6 +3720,8 @@ function initReports() {
       if (previewPageIndex > 0) {
         previewPageIndex--;
         renderReportPreview();
+        const viewport = document.querySelector('.content-viewport');
+        if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
       }
     };
   }
@@ -3015,6 +3730,8 @@ function initReports() {
     btnNext.onclick = () => {
       previewPageIndex++;
       renderReportPreview();
+      const viewport = document.querySelector('.content-viewport');
+      if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
     };
   }
   
@@ -3095,6 +3812,10 @@ function initCartListeners() {
         if (reqForm) {
           reqForm.reset();
         }
+        const nameInput = document.getElementById('req-name');
+        if (nameInput && currentUser) {
+          nameInput.value = currentUser.username || currentUser.name;
+        }
         requestModal.showModal();
       }
     });
@@ -3148,7 +3869,7 @@ function initCartListeners() {
     try {
       // Save full research request details into the database collection!
       const requestPayload = {
-        researcherName: name,
+        researcherName: currentUser ? (currentUser.username || currentUser.name) : name,
         institution: inst,
         irbCode: irb,
         researchPurpose: purpose,
@@ -3162,20 +3883,26 @@ function initCartListeners() {
         username: currentUser ? currentUser.username : "Unknown Operator",
         role: currentUser ? currentUser.role : "Guest",
         action: "Access Checkout",
-        details: `Approved specimen access checkout [${result.requestId}] for ${requestPayload.samples.length} sample aliquots.`
+        details: `Submitted specimen access checkout [${result.requestId}] for ${requestPayload.samples.length} sample aliquots.`
       });
 
-      alert(`Access Request Approved!\n\nTransaction ID: ${result.requestId || 'REQ-SUCCESS'}\nResearcher: ${name}\nInstitution: ${inst}\n\nOur biobank LIMS system has recorded this request in the database and generated cryogenic labels for shipment order.`);
+      alert(`Access Request Submitted Successfully!\n\nTransaction ID: ${result.requestId || 'REQ-SUCCESS'}\nResearcher: ${currentUser ? (currentUser.username || currentUser.name) : name}\nInstitution: ${inst}\n\nYour request is pending administrative review. You can track its status in the Research Requests tab.`);
       
       // Clear cart
       requestCart = [];
+      localStorage.removeItem('aura_request_cart');
       updateCartUI();
       refreshCatalogView();
       
       // Clear storage grid well panels
       initStorageGrid();
-      document.getElementById('well-details-pane').querySelector('.well-placeholder-text').style.display = 'block';
-      document.getElementById('well-data-content').classList.add('hidden');
+      const detailsPane = document.getElementById('well-details-pane');
+      if (detailsPane) {
+        const placeholder = detailsPane.querySelector('.well-placeholder-text');
+        if (placeholder) placeholder.style.display = 'block';
+      }
+      const wellDataContent = document.getElementById('well-data-content');
+      if (wellDataContent) wellDataContent.classList.add('hidden');
 
       // Close the dialog modal natively
       requestModal.close();
@@ -3190,7 +3917,7 @@ function initCartListeners() {
       renderRequestsLedger();
     } catch (err) {
       console.error("Access Request failed: ", err);
-      alert("Database error: Could not submit access request. Please verify internet connection.");
+      alert(`Database error: ${err.message || 'Could not submit access request. Please verify internet connection.'}`);
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = "Submit Secure Access Request";
@@ -3201,12 +3928,14 @@ function initCartListeners() {
 function addToCart(specimen) {
   if (!requestCart.some(c => c.barcode === specimen.barcode)) {
     requestCart.push(specimen);
+    localStorage.setItem('aura_request_cart', JSON.stringify(requestCart));
     updateCartUI();
   }
 }
 
 function removeFromCart(barcode) {
   requestCart = requestCart.filter(item => item.barcode !== barcode);
+  localStorage.setItem('aura_request_cart', JSON.stringify(requestCart));
   updateCartUI();
   
   // Re-enable table action button
@@ -3231,7 +3960,6 @@ function updateCartUI() {
 
   // Update badge quantities
   const count = requestCart.length;
-  catalogCountBadge.textContent = count;
   cartCounterText.textContent = `${count} specimen${count === 1 ? '' : 's'} selected`;
   if (modalCartCount) modalCartCount.textContent = count;
 
@@ -3268,11 +3996,13 @@ function renderRequestsLedger() {
   
   if (!tbody || !ledgerBadge) return;
   
-  ledgerBadge.textContent = `${requestsCache.length} Active`;
+  let userRequests = requestsCache || [];
+  
+  ledgerBadge.textContent = `${userRequests.length} Active`;
   
   tbody.innerHTML = '';
   
-  if (requestsCache.length === 0) {
+  if (userRequests.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 24px 0;">
@@ -3291,63 +4021,33 @@ function renderRequestsLedger() {
     return;
   }
   
-  // Calculate Pagination bounds
-  const totalRecords = requestsCache.length;
-  const totalPages = Math.max(Math.ceil(totalRecords / ledgerPageSize), 1);
-  
-  if (ledgerPageIndex >= totalPages) {
-    ledgerPageIndex = totalPages - 1;
-  }
-  if (ledgerPageIndex < 0) {
-    ledgerPageIndex = 0;
-  }
-  
-  const startIdx = ledgerPageIndex * ledgerPageSize;
-  const endIdx = Math.min(startIdx + ledgerPageSize, totalRecords);
-  
-  const pagedRecords = requestsCache.slice(startIdx, endIdx);
-
-  // Update pagination badges and controls
-  const paginationInfo = document.getElementById('ledger-pagination-info');
-  const pageInfo = document.getElementById('ledger-page-info');
-  const btnPrev = document.getElementById('ledger-btn-prev');
-  const btnNext = document.getElementById('ledger-btn-next');
-  
-  if (paginationInfo) {
-    paginationInfo.textContent = `Showing ${startIdx + 1} to ${endIdx} of ${totalRecords} entries`;
-  }
-  if (pageInfo) {
-    pageInfo.textContent = `Page ${ledgerPageIndex + 1} of ${totalPages}`;
-  }
-  if (btnPrev) {
-    btnPrev.disabled = (ledgerPageIndex === 0);
-    btnPrev.onclick = () => {
-      ledgerPageIndex--;
-      renderRequestsLedger();
-    };
-  }
-  if (btnNext) {
-    btnNext.disabled = (endIdx >= totalRecords);
-    btnNext.onclick = () => {
-      ledgerPageIndex++;
-      renderRequestsLedger();
-    };
-  }
-  
+  // Render all records directly (pagination removed from dashboard ledger)
+  const pagedRecords = userRequests || [];
   pagedRecords.forEach(req => {
     const row = document.createElement('tr');
-    const sampleBarcodes = req.samples.map(s => s.barcode).join(', ');
+    const samplesList = req.samples || [];
+    const sampleBarcodes = samplesList.map(s => s.barcode).join(', ');
     const truncatedSamples = sampleBarcodes.length > 25 ? sampleBarcodes.slice(0, 25) + '...' : sampleBarcodes;
     
     const dateStr = req.createdAt ? new Date(req.createdAt).toISOString().slice(0, 10) + ' ' + new Date(req.createdAt).toTimeString().slice(0, 5) : 'N/A';
     
+    // Dynamic status display
+    const statusVal = req.status || 'Pending';
+    const statusLower = statusVal.toLowerCase();
+    let statusClass = 'orange-bg';
+    if (statusLower === 'approved' || statusLower === 'allocated' || statusLower === 'released') {
+      statusClass = 'green-bg';
+    } else if (statusLower === 'rejected') {
+      statusClass = 'red-bg';
+    }
+    
     row.innerHTML = `
-      <td><span class="barcode-txt" style="color: var(--accent-cyan); font-weight: bold;">${req.requestId.slice(0, 12)}</span></td>
-      <td><strong>${req.researcherName}</strong></td>
-      <td>${req.institution}</td>
-      <td><code>${req.irbCode}</code></td>
-      <td title="${sampleBarcodes}"><strong>${req.samples.length}</strong> vial(s) (${truncatedSamples})</td>
-      <td><span class="badge green-bg">Approved & Sealing</span></td>
+      <td><span class="barcode-txt" style="color: var(--accent-cyan); font-weight: bold;">${req.requestId ? req.requestId.slice(0, 12) : ''}</span></td>
+      <td><strong>${req.researcherName || ''}</strong></td>
+      <td>${req.institution || ''}</td>
+      <td><code>${req.irbCode || ''}</code></td>
+      <td title="${sampleBarcodes}"><strong>${samplesList.length}</strong> vial(s) (${truncatedSamples})</td>
+      <td><span class="badge ${statusClass}">${statusVal}</span></td>
       <td style="font-family: monospace; font-size: 11px;">${dateStr}</td>
     `;
     tbody.appendChild(row);
@@ -3623,6 +4323,9 @@ async function initLoginPortal() {
       localStorage.setItem('aura_logged_in', 'true');
       localStorage.setItem('aura_current_user', JSON.stringify(authUser));
       
+      const userTheme = authUser.theme || localStorage.getItem('aura_theme_' + authUser.username) || localStorage.getItem('aura_theme') || 'system';
+      applyTheme(userTheme);
+      
       // Log Audit Event
       await db.addAuditLog({
         username: authUser.username,
@@ -3688,17 +4391,18 @@ function updateProfileUI(user) {
 
 function updateAdminMenuVisibility(role) {
   const adminElements = document.querySelectorAll('.LIMS-admin-only');
+  const isAdmin = role === 'Admin' || role === 'Super Admin' || role === 'Lab Admin';
   adminElements.forEach(el => {
-    if (role === 'Admin') {
+    if (isAdmin) {
       el.style.display = '';
     } else {
       el.style.display = 'none';
     }
   });
 
-  if (role !== 'Admin') {
+  if (!isAdmin) {
     const activePanel = document.querySelector('.tab-panel.active');
-    if (activePanel && (activePanel.id === 'access-tab' || activePanel.id === 'audit-tab')) {
+    if (activePanel && (activePanel.id === 'access-tab' || activePanel.id === 'audit-tab' || activePanel.id === 'allocation-tab')) {
       const dashBtn = document.querySelector('.nav-btn[data-tab="dashboard-tab"]');
       if (dashBtn) dashBtn.click();
     }
@@ -3815,13 +4519,109 @@ function renderStudiesGrid() {
   });
 }
 
+function initResearchRequestsFilter() {
+  const buttons = document.querySelectorAll('.filter-tab-btn');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => {
+        b.classList.remove('active');
+        b.style.background = 'transparent';
+        b.style.color = 'var(--text-secondary)';
+      });
+      btn.classList.add('active');
+      btn.style.background = 'var(--bg-primary)';
+      btn.style.color = 'var(--text-primary)';
+      requestsPageIndex = 0;
+      renderResearchRequests();
+    });
+  });
+}
+
 function renderResearchRequests() {
   const tbody = document.getElementById('research-requests-tbody');
   if (!tbody) return;
   
   tbody.innerHTML = '';
   
-  if (requestsCache.length === 0) {
+  const activeFilter = document.querySelector('.filter-tab-btn.active')?.dataset.filter || 'all';
+  
+  const isAdmin = currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Super Admin' || currentUser.role === 'Lab Admin');
+  let userRequests = requestsCache || [];
+
+  // Populate Requests Status Summary Bar
+  const summaryBar = document.getElementById('requests-status-summary-bar');
+  if (summaryBar) {
+    const totalSent = userRequests.length;
+    const pendingCount = userRequests.filter(req => (req.status || '').toLowerCase() === 'pending').length;
+    const approvedCount = userRequests.filter(req => {
+      const s = (req.status || '').toLowerCase();
+      return s === 'approved' || s === 'allocated' || s === 'released';
+    }).length;
+    const rejectedCount = userRequests.filter(req => (req.status || '').toLowerCase() === 'rejected').length;
+
+    summaryBar.innerHTML = `
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Total Requests</span>
+          <span class="metric-icon cyan-bg" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          </span>
+        </div>
+        <div class="metric-body">
+          <h3>${totalSent}</h3>
+          <p class="metric-desc text-cyan">● Total sent</p>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Pending Approval</span>
+          <span class="metric-icon orange-bg" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </span>
+        </div>
+        <div class="metric-body">
+          <h3>${pendingCount}</h3>
+          <p class="metric-desc text-orange">● Under review</p>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Approved Requests</span>
+          <span class="metric-icon green-bg" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+        </div>
+        <div class="metric-body">
+          <h3>${approvedCount}</h3>
+          <p class="metric-desc text-green">● Ready / Allocated</p>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Rejected Requests</span>
+          <span class="metric-icon red-bg" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </span>
+        </div>
+        <div class="metric-body">
+          <h3>${rejectedCount}</h3>
+          <p class="metric-desc text-red">● Disapproved requests</p>
+        </div>
+      </div>
+    `;
+  }
+
+  let filteredRequests = userRequests;
+  if (activeFilter === 'pending') {
+    filteredRequests = userRequests.filter(req => (req.status || '').toLowerCase() === 'pending');
+  } else if (activeFilter === 'approved') {
+    filteredRequests = userRequests.filter(req => {
+      const s = (req.status || '').toLowerCase();
+      return s === 'approved' || s === 'allocated' || s === 'released';
+    });
+  }
+  
+  if (filteredRequests.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 24px 0;">
@@ -3841,7 +4641,7 @@ function renderResearchRequests() {
   }
   
   // Calculate Pagination bounds
-  const totalRecords = requestsCache.length;
+  const totalRecords = filteredRequests.length;
   const totalPages = Math.max(Math.ceil(totalRecords / requestsPageSize), 1);
   
   if (requestsPageIndex >= totalPages) {
@@ -3854,7 +4654,7 @@ function renderResearchRequests() {
   const startIdx = requestsPageIndex * requestsPageSize;
   const endIdx = Math.min(startIdx + requestsPageSize, totalRecords);
   
-  const pagedRecords = requestsCache.slice(startIdx, endIdx);
+  const pagedRecords = filteredRequests.slice(startIdx, endIdx);
 
   // Update pagination badges and controls
   const paginationInfo = document.getElementById('requests-pagination-info');
@@ -3873,6 +4673,8 @@ function renderResearchRequests() {
     btnPrev.onclick = () => {
       requestsPageIndex--;
       renderResearchRequests();
+      const viewport = document.querySelector('.content-viewport');
+      if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
     };
   }
   if (btnNext) {
@@ -3880,28 +4682,180 @@ function renderResearchRequests() {
     btnNext.onclick = () => {
       requestsPageIndex++;
       renderResearchRequests();
+      const viewport = document.querySelector('.content-viewport');
+      if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
     };
   }
   
   pagedRecords.forEach(req => {
     const row = document.createElement('tr');
-    const sampleBarcodes = req.samples.map(s => s.barcode).join(', ');
+    row.style.cursor = 'pointer';
+    const samplesList = req.samples || [];
+    const sampleBarcodes = samplesList.map(s => s.barcode).join(', ');
     
-    let statusClass = 'pending-bg';
-    if (req.status === 'Approved') statusClass = 'green-bg';
-    if (req.status === 'Rejected') statusClass = 'red-bg';
+    const statusVal = req.status || 'Pending';
+    const statusLower = statusVal.toLowerCase();
+    let statusClass = 'orange-bg';
+    if (statusLower === 'approved' || statusLower === 'allocated' || statusLower === 'released') {
+      statusClass = 'green-bg';
+    } else if (statusLower === 'rejected') {
+      statusClass = 'red-bg';
+    }
+    
+    let actionHTML = `<span class="badge ${statusClass}">${statusVal}</span>`;
+    if (isAdmin && (req.status || '').toLowerCase() === 'pending') {
+      actionHTML = `
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button class="secondary-btn btn-action-approve" data-id="${req.requestId}" style="padding: 4px 8px; font-size: 11px; background: rgba(0, 250, 150, 0.1); border-color: var(--accent-teal); color: var(--accent-teal); cursor: pointer; border-radius: 6px;">Approve</button>
+          <button class="secondary-btn btn-action-reject" data-id="${req.requestId}" style="padding: 4px 8px; font-size: 11px; background: rgba(255, 50, 50, 0.1); border-color: var(--accent-red); color: var(--accent-red); cursor: pointer; border-radius: 6px;">Reject</button>
+        </div>
+      `;
+    }
     
     row.innerHTML = `
-      <td><span class="barcode-txt" style="color: var(--accent-cyan); font-weight: bold;">${req.requestId}</span></td>
-      <td><strong>${req.researcherName}</strong></td>
-      <td>${req.institution}</td>
-      <td><code>${req.irbCode}</code></td>
+      <td><span class="barcode-txt" style="color: var(--accent-cyan); font-weight: bold;">${req.requestId || ''}</span></td>
+      <td><strong>${req.researcherName || ''}</strong></td>
+      <td>${req.institution || ''}</td>
+      <td><code>${req.irbCode || ''}</code></td>
       <td><span style="font-size:12px; color: var(--text-secondary);">${req.hypothesis || ''}</span></td>
-      <td title="${sampleBarcodes}"><strong>${req.samples.length}</strong> vial(s)</td>
-      <td><span class="badge ${statusClass}">${req.status}</span></td>
+      <td title="${sampleBarcodes}"><strong>${samplesList.length}</strong> vial(s)</td>
+      <td>${actionHTML}</td>
     `;
+    
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      showRequestDetailsModal(req);
+    });
+
     tbody.appendChild(row);
   });
+
+  // Attach event listeners for admin approve/reject buttons
+  tbody.querySelectorAll('.btn-action-approve').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const requestId = btn.getAttribute('data-id');
+      btn.disabled = true;
+      btn.textContent = 'Approve...';
+      try {
+        await db.approveResearchRequest(requestId);
+        alert(`Request ${requestId} approved successfully.`);
+        await refreshDatabaseCache();
+        renderResearchRequests();
+        renderDashboardStats();
+      } catch (err) {
+        console.error("Failed to approve request:", err);
+        alert("Error: Could not approve request.");
+        btn.disabled = false;
+        btn.textContent = 'Approve';
+      }
+    });
+  });
+
+  tbody.querySelectorAll('.btn-action-reject').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const requestId = btn.getAttribute('data-id');
+      btn.disabled = true;
+      btn.textContent = 'Reject...';
+      try {
+        await db.rejectResearchRequest(requestId);
+        alert(`Request ${requestId} rejected successfully.`);
+        await refreshDatabaseCache();
+        renderResearchRequests();
+        renderDashboardStats();
+      } catch (err) {
+        console.error("Failed to reject request:", err);
+        alert("Error: Could not reject request.");
+        btn.disabled = false;
+        btn.textContent = 'Reject';
+      }
+    });
+  });
+}
+
+function initRequestDetailsModal() {
+  const modal = document.getElementById('request-details-modal');
+  const btnClose = document.getElementById('btn-close-details-modal');
+  if (modal && btnClose) {
+    btnClose.onclick = () => modal.close();
+  }
+}
+
+function showRequestDetailsModal(req) {
+  const modal = document.getElementById('request-details-modal');
+  const body = document.getElementById('request-details-modal-body');
+  if (!modal || !body) return;
+
+  const samplesList = req.samples || [];
+  
+  // Construct HTML listing specimens and their current status in the biobank/LIMS database
+  const specimensHTML = samplesList.map(s => {
+    // Look up the full specimen info from specimensCache to get its actual current status
+    const fullSpecimen = specimensCache.find(spec => spec.barcode === s.barcode) || {};
+    const type = fullSpecimen.type || 'Unknown';
+    const location = fullSpecimen.location || 'Unstored';
+    const qcStatus = fullSpecimen.qcStatus || 'Pending';
+    const status = fullSpecimen.status || 'Unknown';
+    
+    // Status colors
+    let badgeClass = 'pending-bg';
+    if (status === 'Allocated' || status === 'Received' || status === 'Consent Verified') badgeClass = 'green-bg';
+    if (status === 'Retrieved') badgeClass = 'orange-bg';
+    if (status === 'Shipped') badgeClass = 'purple-bg';
+    
+    return `
+      <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); padding:12px 16px; border:1px solid rgba(255,255,255,0.05); border-radius:10px; margin-bottom:8px;">
+        <div>
+          <div style="font-family:monospace; font-weight:bold; color:var(--text-primary); font-size:13px;">${s.barcode}</div>
+          <div style="font-size:11px; color:var(--text-secondary); margin-top:3px;">
+            Type: <span style="color: var(--accent-purple); font-weight:600;">${type}</span> | Location: <code>${location}</code>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <span class="badge ${badgeClass}" style="font-size:10px; padding:3px 8px;">${status}</span>
+          <div style="font-size:10px; color:var(--text-tertiary); margin-top:4px;">QC: ${qcStatus}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  body.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; font-size:12px; background: rgba(255,255,255,0.01); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+        <div>
+          <span style="color:var(--text-tertiary); display:block; margin-bottom:2px;">Researcher Name</span>
+          <strong>${req.researcherName || 'N/A'}</strong>
+        </div>
+        <div>
+          <span style="color:var(--text-tertiary); display:block; margin-bottom:2px;">Institution</span>
+          <strong>${req.institution || 'N/A'}</strong>
+        </div>
+        <div>
+          <span style="color:var(--text-tertiary); display:block; margin-bottom:2px;">IRB Approval Code</span>
+          <code>${req.irbCode || 'N/A'}</code>
+        </div>
+        <div>
+          <span style="color:var(--text-tertiary); display:block; margin-bottom:2px;">Submission Date</span>
+          <strong>${req.createdAt ? new Date(req.createdAt).toLocaleDateString() : 'N/A'}</strong>
+        </div>
+      </div>
+      
+      <div>
+        <span style="color:var(--text-tertiary); font-size:11px; text-transform: uppercase; font-weight:600; display:block; margin-bottom:4px;">Research Hypothesis / Purpose</span>
+        <p style="font-size:12px; color:var(--text-secondary); background:rgba(0,0,0,0.2); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.03); line-height:1.4; margin:0;">${req.hypothesis || 'N/A'}</p>
+      </div>
+      
+      <div>
+        <span style="color:var(--text-tertiary); font-size:11px; text-transform: uppercase; font-weight:600; display:block; margin-bottom:8px;">Requested Specimen Aliquots (${samplesList.length})</span>
+        <div style="max-height: 250px; overflow-y:auto; padding-right:4px;">
+          ${specimensHTML || '<div style="color: var(--text-secondary); font-size:12px;">No specimens found in this request.</div>'}
+        </div>
+      </div>
+    </div>
+  `;
+
+  modal.showModal();
 }
 
 function renderSampleAllocation() {
@@ -3942,14 +4896,15 @@ function renderSampleAllocation() {
       ? `<span class="badge green-bg" style="font-size:10px;">Approved</span>` 
       : `<span class="badge orange-bg" style="font-size:10px;">Pending</span>`;
       
+    const samplesList = req.samples || [];
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-        <strong style="color:var(--accent-cyan); font-family:monospace;">${req.requestId}</strong>
+        <strong style="color:var(--accent-cyan); font-family:monospace;">${req.requestId || ''}</strong>
         ${statusBadge}
       </div>
-      <div style="font-size:12px; color:var(--text-primary); font-weight:500;">${req.researcherName}</div>
-      <div style="font-size:11px; color:var(--text-secondary);">${req.institution}</div>
-      <div style="font-size:10px; color:var(--text-tertiary); margin-top:6px;">${req.samples.length} specimen(s) requested</div>
+      <div style="font-size:12px; color:var(--text-primary); font-weight:500;">${req.researcherName || ''}</div>
+      <div style="font-size:11px; color:var(--text-secondary);">${req.institution || ''}</div>
+      <div style="font-size:10px; color:var(--text-tertiary); margin-top:6px;">${samplesList.length} specimen(s) requested</div>
     `;
     
     card.addEventListener('click', () => {
@@ -3966,7 +4921,7 @@ function showAllocationDetails(req) {
   const detailsPanel = document.getElementById('allocation-details-panel');
   if (!detailsPanel) return;
   
-  const specimensListHTML = req.samples.map(s => {
+  const specimensListHTML = (req.samples || []).map(s => {
     const fullSpecimen = specimensCache.find(spec => spec.barcode === s.barcode) || {};
     const type = fullSpecimen.type || 'Unknown';
     const location = fullSpecimen.location || 'Unstored';
@@ -4020,7 +4975,7 @@ function showAllocationDetails(req) {
       </div>
       
       <div>
-        <span style="color:var(--text-tertiary); font-size:12px; display:block; margin-bottom:8px;">Target Aliquot Allocation (${req.samples.length})</span>
+        <span style="color:var(--text-tertiary); font-size:12px; display:block; margin-bottom:8px;">Target Aliquot Allocation (${(req.samples || []).length})</span>
         <div style="max-height: 200px; overflow-y:auto; padding-right:4px;">
           ${specimensListHTML}
         </div>
@@ -4166,6 +5121,8 @@ function renderPublications() {
     btnPrev.onclick = () => {
       publicationsPageIndex--;
       renderPublications();
+      const viewport = document.querySelector('.content-viewport');
+      if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
     };
   }
   if (btnNext) {
@@ -4173,6 +5130,8 @@ function renderPublications() {
     btnNext.onclick = () => {
       publicationsPageIndex++;
       renderPublications();
+      const viewport = document.querySelector('.content-viewport');
+      if (viewport) viewport.scrollTo({ top: 0, behavior: 'smooth' });
     };
   }
   

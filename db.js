@@ -191,6 +191,26 @@ class LocalStorageDB {
     return newRequest;
   }
 
+  async approveResearchRequest(requestId) {
+    const requests = JSON.parse(localStorage.getItem('aura_requests') || '[]');
+    const idx = requests.findIndex(r => r.requestId === requestId);
+    if (idx !== -1) {
+      requests[idx].status = 'Approved';
+      localStorage.setItem('aura_requests', JSON.stringify(requests));
+    }
+    return true;
+  }
+
+  async rejectResearchRequest(requestId) {
+    const requests = JSON.parse(localStorage.getItem('aura_requests') || '[]');
+    const idx = requests.findIndex(r => r.requestId === requestId);
+    if (idx !== -1) {
+      requests[idx].status = 'Rejected';
+      localStorage.setItem('aura_requests', JSON.stringify(requests));
+    }
+    return true;
+  }
+
   async getResearchRequests() {
     const list = JSON.parse(localStorage.getItem('aura_requests') || '[]');
     return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -249,6 +269,18 @@ class LocalStorageDB {
       users[idx].role = role;
       localStorage.setItem('aura_users', JSON.stringify(users));
       console.log(`AURA DB: Updated User role [${id}] to [${role}] in Local Mode.`);
+      return true;
+    }
+    return false;
+  }
+
+  async updateUserTheme(id, theme) {
+    const users = await this.getUsers();
+    const idx = users.findIndex(u => u.id === id);
+    if (idx !== -1) {
+      users[idx].theme = theme;
+      localStorage.setItem('aura_users', JSON.stringify(users));
+      console.log(`AURA DB: Updated User theme [${id}] to [${theme}] in Local Mode.`);
       return true;
     }
     return false;
@@ -444,6 +476,18 @@ class FirestoreDB {
     return { requestId: docRef.id, ...docData };
   }
 
+  async approveResearchRequest(requestId) {
+    const docRef = this.fs.doc(this.db, 'requests', requestId);
+    await this.fs.updateDoc(docRef, { status: 'Approved' });
+    return true;
+  }
+
+  async rejectResearchRequest(requestId) {
+    const docRef = this.fs.doc(this.db, 'requests', requestId);
+    await this.fs.updateDoc(docRef, { status: 'Rejected' });
+    return true;
+  }
+
   async getResearchRequests() {
     const snap = await this.fs.getDocs(this.fs.collection(this.db, 'requests'));
     const results = [];
@@ -510,6 +554,13 @@ class FirestoreDB {
     const userRef = this.fs.doc(this.db, 'users', id);
     await this.fs.updateDoc(userRef, { role: role });
     console.log(`AURA DB: Updated User role [${id}] to [${role}] in Cloud Mode.`);
+    return true;
+  }
+
+  async updateUserTheme(id, theme) {
+    const userRef = this.fs.doc(this.db, 'users', id);
+    await this.fs.updateDoc(userRef, { theme: theme });
+    console.log(`AURA DB: Updated User theme [${id}] to [${theme}] in Cloud Mode.`);
     return true;
   }
 
@@ -710,6 +761,13 @@ class APIDB {
     return data;
   }
 
+  async rejectResearchRequest(requestId) {
+    const data = await this.fetchApi(`/requests/reject/${requestId}`, {
+      method: 'POST'
+    });
+    return data;
+  }
+
   async getStats() {
     const data = await this.fetchApi('/stats');
     return data.stats || {
@@ -744,6 +802,10 @@ class APIDB {
   }
 
   async updateUserRole(id, role) {
+    return true;
+  }
+
+  async updateUserTheme(id, theme) {
     return true;
   }
 

@@ -310,12 +310,27 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showUploadForWithdrawn, setShowUploadForWithdrawn] = useState(false);
+  const [showUploadForDraft, setShowUploadForDraft] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState('Draft');
   const [statusFilter, setStatusFilter] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
+    setShowUploadForDraft(false);
+    setShowUploadForWithdrawn(false);
+  }, [selectedSampleId]);
+
+  useEffect(() => {
     setCurrentPage(1);
   }, [statusFilter]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const mainContent = document.querySelector('aside + div');
+    if (mainContent) {
+      mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentPage]);
 
   // Samples that need consent (consent_id is null, or verification_status is Rejected)
   const samplesNeedConsent = samples.filter(s => !s.consent_id || s.consent_status === 'Rejected');
@@ -325,7 +340,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
 
   const selectedSample = samples.find(s => s.id === selectedSampleId);
   const hasUploadedConsent = selectedSample && (
-    selectedSample.consent_status === 'Draft' ||
+    (selectedSample.consent_status === 'Draft' && !showUploadForDraft) ||
     selectedSample.consent_status === 'Submitted' || 
     selectedSample.consent_status === 'Verified' ||
     (selectedSample.consent_status === 'Withdrawn' && !showUploadForWithdrawn)
@@ -337,7 +352,15 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
     }
   };
 
-  const handleSubmitConsent = async (e, forcedStatus) => {
+  const handleEditDraft = () => {
+    if (selectedSample) {
+      setConsentVersion(selectedSample.consent_version || 'v1.0');
+      setConsentDate(selectedSample.consent_date || new Date().toLocaleDateString('en-CA'));
+      setShowUploadForDraft(true);
+    }
+  };
+
+  const handleSubmitConsent = async (e) => {
     if (e) e.preventDefault();
     setError('');
     setSuccess('');
@@ -346,13 +369,29 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
       setError("Please select a sample code to link this consent document.");
       return;
     }
-    if (!consentFile) {
+
+    const isEditingDraft = selectedSample && selectedSample.consent_status === 'Draft';
+    if (!consentFile && !isEditingDraft) {
       setError("Please select a signed consent document file to upload.");
       return;
     }
 
     setLoading(true);
-    const targetStatus = forcedStatus || 'Draft';
+    const targetStatus = submitStatus || 'Draft';
+
+    let documentName = "consent.pdf";
+    if (consentFile) {
+      documentName = consentFile.name;
+    } else if (selectedSample && selectedSample.document_url) {
+      const parts = selectedSample.document_url.split('/');
+      const filename = parts[parts.length - 1];
+      const underscoreIndex = filename.indexOf('_');
+      if (underscoreIndex !== -1) {
+        documentName = filename.substring(underscoreIndex + 1);
+      } else {
+        documentName = filename;
+      }
+    }
 
     try {
       const response = await fetch(`${backendUrl}/api/consent/submit`, {
@@ -366,7 +405,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
           sample_id: selectedSampleId,
           consent_version: consentVersion,
           consent_date: consentDate,
-          document_name: consentFile.name,
+          document_name: documentName,
           status: targetStatus
         })
       });
@@ -380,6 +419,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
       setSuccess(`Consent record created successfully! Consent ID: ${data.consent.id}. Status is currently ${targetStatus.toUpperCase()}.`);
       setSelectedSampleId('');
       setConsentFile(null);
+      setShowUploadForDraft(false);
       if (setPreSelectedSampleId) setPreSelectedSampleId('');
       
       if (onConsentAction) onConsentAction();
@@ -468,6 +508,12 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
       setSuccess(`Consent record ${consentId} was updated to: ${status.toUpperCase()}. linked sample status updated.`);
       
       if (onConsentAction) onConsentAction();
+
+      if (status === 'Verified') {
+        setTimeout(() => {
+          setActiveTab('barcode');
+        }, 1500);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -519,7 +565,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
     }
   };
 
-  const isVerifier = user.role === 'Lab Admin' || user.role === 'Lab Technician';
+  const isVerifier = user.role === 'Super Admin' || user.role === 'Lab Admin' || (user.permissions && (user.permissions.includes('Verify Consent') || user.permissions.includes('Reject Consent')));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px', textAlign: 'left' }}>
@@ -740,6 +786,21 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                       <span style={{ fontSize: '13px', fontStyle: 'italic', color: 'var(--text-tertiary)' }}>No document URL available</span>
                     )}
 
+                    {selectedSample.consent_status === 'Draft' && (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleEditDraft}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', fontSize: '13px' }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px' }}>
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z" />
+                        </svg>
+                        Edit Consent Details
+                      </button>
+                    )}
+
                     {selectedSample.consent_status === 'Withdrawn' ? (
                       <button
                         type="button"
@@ -863,7 +924,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                     type="file"
                     id="consent-file-mgr"
                     className="form-control"
-                    required
+                    required={!(selectedSample && selectedSample.consent_status === 'Draft')}
                     accept="image/*,application/pdf"
                     onChange={handleFileChange}
                     style={{ padding: '8px' }}
@@ -876,11 +937,21 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                 <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
                   <button 
                     type="submit" 
-                    className="btn btn-primary" 
+                    className="btn btn-secondary" 
+                    onClick={() => setSubmitStatus('Draft')}
                     style={{ flex: 1, padding: '12px', cursor: (!selectedSampleId || !activeLabId || loading) ? 'not-allowed' : 'pointer' }}
                     disabled={loading || !selectedSampleId || !activeLabId}
                   >
                     Save as Draft
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary" 
+                    onClick={() => setSubmitStatus('Submitted')}
+                    style={{ flex: 1, padding: '12px', cursor: (!selectedSampleId || !activeLabId || loading) ? 'not-allowed' : 'pointer' }}
+                    disabled={loading || !selectedSampleId || !activeLabId}
+                  >
+                    Submit Consent
                   </button>
                 </div>
               </form>
@@ -967,12 +1038,12 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
         )}
       </div>
 
-      {/* Consent Queue (Full Width, Visible to Super Admin and users with Verify/Reject Consent permissions) */}
-      {(user.role === 'Super Admin' || (user.permissions && (user.permissions.includes('Verify Consent') || user.permissions.includes('Reject Consent')))) && (() => {
+      {/* Consent Queue (Full Width, Visible to Super Admin, Lab Admin, Collection Staff, Lab Technician and anyone with verify/reject permissions) */}
+      {(user.role === 'Super Admin' || user.role === 'Lab Admin' || user.role === 'Collection Staff' || user.role === 'Lab Technician' || (user.permissions && (user.permissions.includes('Verify Consent') || user.permissions.includes('Reject Consent')))) && (() => {
         const queueConsents = samples.filter(s => s.consent_id);
         const visibleConsents = queueConsents.filter(s => {
           if (s.consent_status === 'Draft') {
-            return user.role === 'Super Admin' || (user.permissions && user.permissions.includes('Verify Consent'));
+            return user.role === 'Super Admin' || user.role === 'Collection Staff' || user.role === 'Lab Technician' || (user.permissions && user.permissions.includes('Verify Consent'));
           }
           return true;
         });
@@ -1086,8 +1157,8 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                                 </button>
                               )}
                               
-                              {/* Submit (Draft -> Submitted): Super Admin only */}
-                              {isDraft && user.role === 'Super Admin' && (
+                              {/* Submit (Draft -> Submitted) */}
+                              {isDraft && (user.role === 'Super Admin' || user.role === 'Collection Staff' || user.role === 'Lab Admin' || user.role === 'Lab Technician') && (
                                 <button
                                   type="button"
                                   className="btn btn-primary"
@@ -1100,7 +1171,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                               )}
 
                               {/* Approve (Verify) */}
-                              {(isDraft || isSubmitted) && (
+                              {(isSubmitted || (isDraft && user.role === 'Super Admin')) && (
                                 <button
                                   type="button"
                                   className="btn btn-primary"
@@ -1118,7 +1189,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                               )}
 
                               {/* Reject */}
-                              {(isDraft || isSubmitted) && (
+                              {(isSubmitted || (isDraft && user.role === 'Super Admin')) && (
                                 <button
                                   type="button"
                                   className="btn btn-secondary"

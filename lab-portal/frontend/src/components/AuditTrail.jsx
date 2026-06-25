@@ -12,6 +12,14 @@ export default function AuditTrail({ backendUrl, token, user, activeLabId, activ
     setCurrentPage(1);
   }, [searchQuery, filterAction]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const mainContent = document.querySelector('aside + div');
+    if (mainContent) {
+      mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentPage]);
+
   const fetchLogs = async () => {
     setLoading(true);
     setError('');

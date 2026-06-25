@@ -2300,3 +2300,19 @@ table.show-filters .column-filter-row {
   border-color: var(--accent-teal);
   box-shadow: 0 12px 40px 0 rgba(0, 242, 254, 0.08);
 }
+
+/* Custom Date Range Picker Preset Button Styles */
+.preset-btn.active {
+  background: var(--bg-tertiary) !important;
+  color: var(--accent-cyan) !important;
+}
+
+.preset-btn:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: var(--text-primary) !important;
+}
+
+body.light-theme .preset-btn:hover {
+  background: rgba(0, 0, 0, 0.03) !important;
+}
+

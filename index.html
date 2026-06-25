@@ -94,6 +94,7 @@
             <button class="nav-btn" data-tab="requests-tab">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
               <span>Research Requests</span>
+              <span class="badge" id="requests-count-badge">0</span>
             </button>
           </li>
           <li>
@@ -102,7 +103,7 @@
               <span>Study Management</span>
             </button>
           </li>
-          <li>
+          <li class="LIMS-admin-only">
             <button class="nav-btn" data-tab="allocation-tab">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-icon"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               <span>Sample Allocation</span>
@@ -196,110 +197,346 @@
       <div class="content-viewport">
         <!-- 1. DASHBOARD TAB -->
         <section id="dashboard-tab" class="tab-panel active">
+          <!-- Hero section with new dashboard title -->
           <div class="hero-banner">
             <div class="hero-image-overlay">
               <img src="assets/hero.png" alt="Futuristic automated biobank facility" fetchpriority="high">
             </div>
             <div class="hero-content">
               <span class="pill-label">Operational Overview</span>
-              <h1>ISO 20387 Certified Bio-Repository</h1>
-              <p>Bridging translational science with cryptographically secure, pseudonymized donor data for next-generation clinical discovery.</p>
-              <div class="hero-stats">
-                <div class="hero-stat-item">
-                  <span class="stat-number" id="stats-total-specimens">--</span>
-                  <span class="stat-label">Total Biospecimens</span>
-                </div>
-                <div class="hero-stat-item">
-                  <span class="stat-number">99.98%</span>
-                  <span class="stat-label">Cold Chain Integrity</span>
-                </div>
+              <h1 id="dashboard-main-title">Research Biobank Analytics & Cohort Discovery</h1>
+              <p>Bridging translational science with clinical data discovery, offering dynamic cohort assembly and live bio-repository search.</p>
+              <div id="dashboard-selected-range-display" style="font-size: 12px; color: var(--accent-cyan); font-weight: 600; margin-top: 8px; display: flex; align-items: center; gap: 6px; background: rgba(0, 242, 254, 0.05); padding: 4px 12px; border-radius: 20px; width: fit-content; border: 1px solid rgba(0, 242, 254, 0.15);">
+                <span>📅 Active Date Range:</span> <span id="dashboard-range-text">Last 30 Days</span>
               </div>
             </div>
           </div>
 
-          <div class="metrics-grid">
-            <div class="metric-card">
-              <div class="metric-header">
-                <span class="metric-title">Total Aliquots</span>
-                <span class="metric-icon teal-bg">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                </span>
+          <!-- Dashboard Filters -->
+          <search class="cohort-filter-panel" style="margin-bottom: 24px; padding: 18px 24px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px;" id="dashboard-filter-panel">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; width: 100%;">
+              <div class="filter-group" style="margin-bottom: 0;">
+                <label for="dash-filter-cohort" style="font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: block; text-transform: uppercase;">Cohort</label>
+                <select id="dash-filter-cohort" style="width: 100%; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); outline: none;">
+                  <option value="all">All Cohorts</option>
+                  <option value="Healthy Control">Healthy Control</option>
+                  <option value="Cancer">Cancer</option>
+                  <option value="Diabetes">Diabetes</option>
+                  <option value="Cardiovascular Disease">Cardiovascular Disease</option>
+                  <option value="Neurological Disorders">Neurological Disorders</option>
+                  <option value="Rare Disease">Rare Disease</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
-              <div class="metric-body">
-                <h3 id="stats-specimen-count">--</h3>
-                <p class="metric-desc text-green">● Cryo-grid active</p>
+              
+              <div class="filter-group" style="margin-bottom: 0;">
+                <label for="dash-filter-disease" style="font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: block; text-transform: uppercase;">Disease (Pathology)</label>
+                <input type="text" id="dash-filter-disease" placeholder="Search pathology (e.g. cancer)..." style="width: 100%; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); outline: none;">
               </div>
-            </div>
+              
+              <div class="filter-group" style="margin-bottom: 0;">
+                <label for="dash-filter-sample-type" style="font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: block; text-transform: uppercase;">Sample Type</label>
+                <select id="dash-filter-sample-type" style="width: 100%; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); outline: none;">
+                  <option value="all">All Types</option>
+                  <option value="Blood">Blood</option>
+                  <option value="Plasma">Plasma</option>
+                  <option value="Serum">Serum</option>
+                  <option value="Buffy Coat">Buffy Coat</option>
+                  <option value="PBMC">PBMC</option>
+                  <option value="DNA">DNA</option>
+                  <option value="RNA">RNA</option>
+                  <option value="Fresh Tissue">Fresh Tissue</option>
+                  <option value="FFPE Tissue">FFPE Tissue</option>
+                  <option value="Urine">Urine</option>
+                  <option value="Saliva">Saliva</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
 
-            <div class="metric-card">
-              <div class="metric-header">
-                <span class="metric-title">Enrolled Donors</span>
-                <span class="metric-icon cyan-bg">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                </span>
+              <div class="filter-group" style="margin-bottom: 0;">
+                <label for="dash-filter-project" style="font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: block; text-transform: uppercase;">Research Project</label>
+                <select id="dash-filter-project" style="width: 100%; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); outline: none;">
+                  <option value="all">All Projects</option>
+                  <!-- Populated by JS -->
+                </select>
               </div>
-              <div class="metric-body">
-                <h3 id="stats-donor-count">--</h3>
-                <p class="metric-desc text-cyan">● Registry synced</p>
-              </div>
-            </div>
 
-            <div class="metric-card">
-              <div class="metric-header">
-                <span class="metric-title">Access Requests</span>
-                <span class="metric-icon orange-bg">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                </span>
-              </div>
-              <div class="metric-body">
-                <h3 id="stats-request-count">--</h3>
-                <p class="metric-desc text-orange">● Secured in LIMS</p>
-              </div>
-            </div>
-
-            <div class="metric-card">
-              <div class="metric-header">
-                <span class="metric-title">Consent Registry</span>
-                <span class="metric-icon purple-bg">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                </span>
-              </div>
-              <div class="metric-body">
-                <h3 id="stats-block-count">--</h3>
-                <p class="metric-desc text-purple">● Immutable blocks</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="dashboard-details" style="grid-template-columns: 1fr; margin-bottom: 24px;">
-            <div class="details-chart-card">
-              <div class="card-title-bar">
-                <h3>Live LIMS System Telemetry & Compliance Analytics</h3>
-                <span class="status-badge green-bg">Continuous Compute</span>
-              </div>
-              <div class="charts-subgrid">
-                <div class="chart-container-box">
-                  <h4 class="chart-box-title">SPECIMEN TYPE DISTRIBUTION</h4>
-                  <div id="donut-chart-container" class="chart-viewport-wrapper">
-                    <!-- Dynamic Donut Chart Injected by JS -->
+              <div class="filter-group" style="margin-bottom: 0;">
+                <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: block; text-transform: uppercase;">Date Range</label>
+                <div class="date-picker-container" style="position: relative; width: 100%;">
+                  <button id="date-range-picker-btn" type="button" style="width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); cursor: pointer; text-align: left; font-size: 11px; font-family: var(--font-body); outline: none; transition: var(--transition-smooth);">
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; color: var(--text-secondary);"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      <span id="selected-date-range-text">Last 30 Days</span>
+                    </span>
+                    <span style="font-size: 8px; color: var(--text-secondary);">▼</span>
+                  </button>
+                  <div id="date-picker-dropdown" style="display: none; position: absolute; top: calc(100% + 6px); right: 0; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); z-index: 1000; width: 260px; flex-direction: column; gap: 10px;">
+                    <!-- Presets -->
+                    <div style="display: flex; flex-direction: column; gap: 2px;">
+                      <button type="button" class="preset-btn" data-preset="today" style="background: transparent; border: none; padding: 6px 8px; text-align: left; color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 500; border-radius: 6px; width: 100%;">Today</button>
+                      <button type="button" class="preset-btn" data-preset="yesterday" style="background: transparent; border: none; padding: 6px 8px; text-align: left; color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 500; border-radius: 6px; width: 100%;">Yesterday</button>
+                      <button type="button" class="preset-btn" data-preset="7days" style="background: transparent; border: none; padding: 6px 8px; text-align: left; color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 500; border-radius: 6px; width: 100%;">Last 7 Days</button>
+                      <button type="button" class="preset-btn active" data-preset="30days" style="background: transparent; border: none; padding: 6px 8px; text-align: left; color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 500; border-radius: 6px; width: 100%;">Last 30 Days</button>
+                      <button type="button" class="preset-btn" data-preset="thismonth" style="background: transparent; border: none; padding: 6px 8px; text-align: left; color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 500; border-radius: 6px; width: 100%;">This Month</button>
+                      <button type="button" class="preset-btn" data-preset="lastmonth" style="background: transparent; border: none; padding: 6px 8px; text-align: left; color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 500; border-radius: 6px; width: 100%;">Last Month</button>
+                      <button type="button" class="preset-btn" data-preset="custom" style="background: transparent; border: none; padding: 6px 8px; text-align: left; color: var(--text-secondary); cursor: pointer; font-size: 11px; font-weight: 500; border-radius: 6px; width: 100%;">Custom Date Range</button>
+                    </div>
+                    
+                    <!-- Custom Date Picker Inputs -->
+                    <div id="custom-date-inputs" style="display: none; border-top: 1px solid var(--border-color); padding-top: 8px; flex-direction: column; gap: 8px;">
+                      <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <label style="font-size: 9px; text-transform: uppercase; color: var(--text-secondary); font-weight: 700;">Start Date</label>
+                        <input type="date" id="dash-filter-date-start" style="padding: 6px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); outline: none; font-size: 11px; width: 100%;">
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 4px;">
+                        <label style="font-size: 9px; text-transform: uppercase; color: var(--text-secondary); font-weight: 700;">End Date</label>
+                        <input type="date" id="dash-filter-date-end" style="padding: 6px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); outline: none; font-size: 11px; width: 100%;">
+                      </div>
+                      <div id="date-validation-error" style="color: var(--accent-red); font-size: 10px; font-weight: 600; display: none; line-height: 1.2;"></div>
+                      <button type="button" id="apply-custom-date-btn" style="background: var(--accent-teal); border: none; padding: 8px; color: white; cursor: pointer; font-weight: 600; border-radius: 6px; font-size: 11px; width: 100%; transition: var(--transition-smooth);">Apply Range</button>
+                    </div>
                   </div>
                 </div>
-                <div class="chart-container-box">
-                  <h4 class="chart-box-title">PATIENT RESEARCH CONSENT MATRIX</h4>
-                  <div id="bar-chart-container" class="chart-viewport-wrapper">
-                    <!-- Dynamic Bar Chart Injected by JS -->
-                  </div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; width: 100%;">
+              <button class="secondary-btn" id="btn-refresh-dashboard" style="padding: 6px 16px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: 600;">
+                <span>🔄</span> Refresh Dashboard
+              </button>
+              <div style="display: flex; gap: 8px;">
+                <button class="secondary-btn" id="btn-clear-dashboard-filters" style="padding: 6px 16px; font-size: 12px; cursor: pointer; font-family: var(--font-body); font-weight: 600;">Clear Filters</button>
+                <button class="secondary-btn" id="btn-reset-dashboard-filters" style="padding: 6px 16px; font-size: 12px; cursor: pointer; display: none;">Reset Filters</button>
+              </div>
+            </div>
+          </search>
+
+          <!-- TOP KPI CARDS (6 Cards) -->
+          <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Total Donors</span>
+                <span class="metric-icon cyan-bg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-total-donors">--</h3>
+                <p class="metric-desc text-cyan">● Registry cohort</p>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Total Biospecimens</span>
+                <span class="metric-icon teal-bg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-total-specimens">--</h3>
+                <p class="metric-desc text-green">● Total inventory</p>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Available Aliquots</span>
+                <span class="metric-icon green-bg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-available-aliquots">--</h3>
+                <p class="metric-desc text-green">● Ready to allocate</p>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Active Consents</span>
+                <span class="metric-icon purple-bg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-active-consents">--</h3>
+                <p class="metric-desc text-purple">● General & genomic</p>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Active Projects</span>
+                <span class="metric-icon orange-bg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-active-projects">--</h3>
+                <p class="metric-desc text-orange">● Approved studies</p>
+              </div>
+            </div>
+
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">Request Available</span>
+                <span class="metric-icon red-bg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/></svg></span>
+              </div>
+              <div class="metric-body">
+                <h3 id="stats-available-request">--</h3>
+                <p class="metric-desc text-red">● Open request cart</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 1 & 2: SPECIMEN DISTRIBUTION & COHORT DISTRIBUTION VISUALIZATIONS -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 24px; margin-bottom: 24px;">
+            <!-- SECTION 1: SPECIMEN DISTRIBUTION -->
+            <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+              <div class="card-title-bar" style="margin-bottom: 16px;">
+                <h3>Section 1: Specimen Type Distribution</h3>
+                <span class="status-badge green-bg">Pie & Bar Charts</span>
+              </div>
+              <div style="display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap;">
+                <div id="specimen-pie-container" style="width: 140px; height: 140px; display: flex; align-items: center; justify-content: center;">
+                  <!-- Injected by JS -->
+                </div>
+                <div id="specimen-bar-container" style="flex: 1; min-width: 180px; height: 160px; display: flex; align-items: center; justify-content: center;">
+                  <!-- Injected by JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 2: DISEASE / COHORT DISTRIBUTION -->
+            <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+              <div class="card-title-bar" style="margin-bottom: 16px;">
+                <h3>Section 2: Disease / Cohort Distribution</h3>
+                <span class="status-badge green-bg">Bar & Donut Charts</span>
+              </div>
+              <div style="display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap;">
+                <div id="cohort-donut-container" style="width: 140px; height: 140px; display: flex; align-items: center; justify-content: center;">
+                  <!-- Injected by JS -->
+                </div>
+                <div id="cohort-bar-container" style="flex: 1; min-width: 180px; height: 160px; display: flex; align-items: center; justify-content: center;">
+                  <!-- Injected by JS -->
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="details-chart-card">
+          <!-- SECTION 3: SAMPLE AVAILABILITY MATRIX & SECTION 4: CONSENT ANALYTICS -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; margin-bottom: 24px;">
+            <!-- SECTION 3: SAMPLE AVAILABILITY MATRIX -->
+            <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+              <div class="card-title-bar" style="margin-bottom: 12px;">
+                <h3>Section 3: Sample Availability Matrix</h3>
+              </div>
+              <div class="catalog-table-container" style="max-height: 220px; overflow-y: auto;">
+                <table class="catalog-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Sample Type</th>
+                      <th scope="col">Total Samples</th>
+                      <th scope="col">Available</th>
+                      <th scope="col">Reserved</th>
+                      <th scope="col">Released</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-availability-matrix-tbody">
+                    <!-- Populated dynamically by JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- SECTION 4: CONSENT ANALYTICS -->
+            <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+              <div class="card-title-bar" style="margin-bottom: 12px;">
+                <h3>Section 4: Consent Analytics</h3>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 12px;" id="stats-consent-analytics-container">
+                <!-- Populated dynamically by JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 5: OMICS DATA AVAILABILITY & SECTION 6: SAMPLE LIFECYCLE WORKFLOW FUNNEL -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; margin-bottom: 24px;">
+            <!-- SECTION 5: OMICS DATA AVAILABILITY -->
+            <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+              <div class="card-title-bar" style="margin-bottom: 12px;">
+                <h3>Section 5: Omics Data Availability</h3>
+              </div>
+              <div class="catalog-table-container">
+                <table class="catalog-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Data Modality</th>
+                      <th scope="col">Dataset Count</th>
+                      <th scope="col">Available Records</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-omics-availability-tbody">
+                    <!-- Populated dynamically by JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- SECTION 6: SAMPLE LIFECYCLE FUNNEL -->
+            <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+              <div class="card-title-bar" style="margin-bottom: 12px;">
+                <h3>Section 6: Sample Lifecycle Status</h3>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px; justify-content: center;" id="lifecycle-funnel-container">
+                <!-- Funnel SVG/CSS will be injected dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 7: RESEARCH ACCESS REQUESTS & SECTION 8: RESEARCH IMPACT -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; margin-bottom: 24px;">
+            <!-- SECTION 7: RESEARCH ACCESS REQUESTS -->
+            <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+              <div class="card-title-bar" style="margin-bottom: 12px;">
+                <h3>Section 7: Research Access Requests Summary</h3>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; text-align: center;" id="stats-requests-summary-container">
+                <!-- Injected dynamically -->
+              </div>
+            </div>
+
+            <!-- SECTION 8: RESEARCH IMPACT -->
+            <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
+              <div class="card-title-bar" style="margin-bottom: 12px;">
+                <h3>Section 8: Research Impact Metrics</h3>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;" id="stats-impact-container">
+                <!-- Injected dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 9: RECENT RESEARCH ACTIVITY -->
+          <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px; margin-bottom: 24px;">
+            <div class="card-title-bar" style="margin-bottom: 12px;">
+              <h3>Section 9: Recent Research Activity</h3>
+            </div>
+            <div class="catalog-table-container">
+              <table class="catalog-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Category</th>
+                    <th scope="col">Description / Details</th>
+                    <th scope="col">Timestamp</th>
+                    <th scope="col">Status / Context</th>
+                  </tr>
+                </thead>
+                <tbody id="stats-recent-activity-tbody">
+                  <!-- Populated dynamically by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Secure Access Request Ledger -->
+          <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
             <div class="card-title-bar">
-              <h3>LIMS Access Request Ledger</h3>
+              <h3>Secure Access Request Ledger</h3>
               <span class="badge" id="requests-ledger-badge" style="background: rgba(0, 242, 254, 0.08); color: var(--accent-cyan);">0 Active</span>
             </div>
-            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.4;">This ledger displays all biospecimen access requests recorded persistently in the database, complete with scientific justification and verification states.</p>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.4;">Displays all biospecimen access requests recorded persistently in the database.</p>
             <div class="catalog-table-container" style="max-height: 250px; overflow-y: auto;">
               <table class="catalog-table">
                 <thead>
@@ -316,15 +553,13 @@
                 <tbody id="ledger-table-body">
                   <tr>
                     <td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 24px 0;">
-                      No secure requests found in database. Select specimens in the catalog to submit a request.
+                      No secure requests found in database.
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            
-            <!-- Ledger Pagination Controls -->
-            <div class="pagination-container" id="ledger-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+            <div class="pagination-container" id="ledger-pagination" style="display: none; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; margin-top: 8px;">
               <span id="ledger-pagination-info" style="font-size: 11px; color: var(--text-secondary);">Showing 0 to 0 of 0 entries</span>
               <div style="display: flex; gap: 8px; align-items: center;">
                 <button class="secondary-btn" id="ledger-btn-prev" style="padding: 4px 10px; font-size: 10px;">Previous</button>
@@ -420,6 +655,7 @@
               <button class="secondary-btn" id="catalog-btn-next" style="padding: 6px 12px; font-size: 11px;">Next</button>
             </div>
           </div>
+        </section>
                 <!-- 3. RESEARCH REQUESTS TAB -->
         <section id="requests-tab" class="tab-panel">
           <div class="section-header">
@@ -431,6 +667,14 @@
           <div class="details-chart-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px; padding: 24px;">
             <div class="card-title-bar" style="margin-bottom: 16px;">
               <h3>Access Requests Register</h3>
+            </div>
+            <!-- Requests Status Summary Bar -->
+            <div id="requests-status-summary-bar" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;"></div>
+            
+            <div class="requests-filter-bar" style="display: flex; gap: 8px; margin-bottom: 16px;">
+              <button class="filter-tab-btn active" data-filter="all" style="padding: 6px 16px; font-size: 12px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-family: var(--font-body); font-weight: 600; outline: none; transition: all 0.2s;">All Requests</button>
+              <button class="filter-tab-btn" data-filter="pending" style="padding: 6px 16px; font-size: 12px; border-radius: 20px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer; font-family: var(--font-body); font-weight: 600; outline: none; transition: all 0.2s;">Pending</button>
+              <button class="filter-tab-btn" data-filter="approved" style="padding: 6px 16px; font-size: 12px; border-radius: 20px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer; font-family: var(--font-body); font-weight: 600; outline: none; transition: all 0.2s;">Approved</button>
             </div>
             <div class="catalog-table-container">
               <table class="catalog-table">
@@ -768,6 +1012,17 @@
           <button type="submit" class="primary-btn">Save QC Assessment</button>
         </div>
       </form>
+    </div>
+  </dialog>
+
+  <!-- NATIVE MODAL: RESEARCH REQUEST DETAILS DIALOG -->
+  <dialog id="request-details-modal" class="request-cart-dialog" style="max-width: 600px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius:16px;">
+    <div class="modal-header">
+      <h2>Access Request Details</h2>
+      <button class="close-modal-btn" id="btn-close-details-modal">✕</button>
+    </div>
+    <div class="modal-body" id="request-details-modal-body" style="padding-top:16px;">
+      <!-- Populated dynamically by JS -->
     </div>
   </dialog>
 

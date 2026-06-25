@@ -24,6 +24,14 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
     setCurrentPage(1);
   }, [searchQuery, roleFilter, statusFilter]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const mainContent = document.querySelector('aside + div');
+    if (mainContent) {
+      mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentPage]);
+
   // Modals state
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);

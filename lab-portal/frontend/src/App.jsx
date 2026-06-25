@@ -12,6 +12,7 @@ import PublicSpecimenTracker from './components/PublicSpecimenTracker';
 import InventoryStorage from './components/InventoryStorage';
 import ShipmentManagement from './components/ShipmentManagement';
 import TraceSpecimen from './components/TraceSpecimen';
+import SpecimenTypeMaster from './components/SpecimenTypeMaster';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || window.AURA_BACKEND_URL || 'http://localhost:5001';
 
@@ -20,6 +21,7 @@ export default function App() {
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('aura_lab_user')) || null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [samples, setSamples] = useState([]);
+  const [globalTotal, setGlobalTotal] = useState(0);
   const [theme, setTheme] = useState(localStorage.getItem('aura_lab_theme') || 'dark');
   const [loadingSamples, setLoadingSamples] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -127,6 +129,7 @@ export default function App() {
       const data = await response.json();
       if (response.ok) {
         setSamples(data.samples || []);
+        setGlobalTotal(data.globalTotal || 0);
       }
     } catch (error) {
       console.error("Error fetching samples registry:", error);
@@ -417,34 +420,6 @@ export default function App() {
 
               <li>
                 <button
-                  onClick={() => setActiveTab('storage')}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--border-radius-sm)',
-                    background: activeTab === 'storage' ? 'var(--border-color)' : 'transparent',
-                    border: 'none',
-                    color: activeTab === 'storage' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    fontWeight: activeTab === 'storage' ? '700' : '500',
-                    fontSize: '13px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                    gap: '10px',
-                    cursor: 'pointer',
-                    transition: 'var(--transition-smooth)'
-                  }}
-                  title={sidebarCollapsed ? "Inventory & Storage" : undefined}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                  </svg>
-                  {!sidebarCollapsed && "Inventory & Storage"}
-                </button>
-              </li>
-
-              <li>
-                <button
                   onClick={() => setActiveTab('shipments')}
                   style={{
                     width: '100%',
@@ -468,6 +443,34 @@ export default function App() {
                     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                   </svg>
                   {!sidebarCollapsed && "Shipment & Receiving"}
+                </button>
+              </li>
+
+              <li>
+                <button
+                  onClick={() => setActiveTab('storage')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: activeTab === 'storage' ? 'var(--border-color)' : 'transparent',
+                    border: 'none',
+                    color: activeTab === 'storage' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontWeight: activeTab === 'storage' ? '700' : '500',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  title={sidebarCollapsed ? "Inventory & Storage" : undefined}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                  </svg>
+                  {!sidebarCollapsed && "Inventory & Storage"}
                 </button>
               </li>
 
@@ -568,6 +571,34 @@ export default function App() {
                         <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                       </svg>
                       {!sidebarCollapsed && "User Management"}
+                    </button>
+                  </li>
+
+                  <li>
+                    <button
+                      onClick={() => setActiveTab('specimen-types')}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: 'var(--border-radius-sm)',
+                        background: activeTab === 'specimen-types' ? 'var(--border-color)' : 'transparent',
+                        border: 'none',
+                        color: activeTab === 'specimen-types' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        fontWeight: activeTab === 'specimen-types' ? '700' : '500',
+                        fontSize: '13px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                        gap: '10px',
+                        cursor: 'pointer',
+                        transition: 'var(--transition-smooth)'
+                      }}
+                      title={sidebarCollapsed ? "Specimen Type Master" : undefined}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                      </svg>
+                      {!sidebarCollapsed && "Specimen Type Master"}
                     </button>
                   </li>
 
@@ -781,6 +812,7 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <Dashboard 
               samples={samples} 
+              globalTotal={globalTotal}
               setActiveTab={setActiveTab} 
               user={user} 
               activeLabId={activeLabId}
@@ -868,6 +900,7 @@ export default function App() {
               onShipmentAction={() => fetchSamples(token)} 
               activeLabId={activeLabId}
               activeLabName={activeLabName}
+              setActiveTab={setActiveTab}
             />
           )}
 
@@ -889,6 +922,14 @@ export default function App() {
               setActiveTab={setActiveTab}
               activeLabId={activeLabId}
               activeLabName={activeLabName}
+            />
+          )}
+
+          {activeTab === 'specimen-types' && (
+            <SpecimenTypeMaster 
+              backendUrl={BACKEND_URL} 
+              token={token} 
+              user={user} 
             />
           )}
 

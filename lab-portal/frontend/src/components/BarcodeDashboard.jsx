@@ -13,7 +13,13 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
   const [success, setSuccess] = useState('');
   const [selectedBarcodeIds, setSelectedBarcodeIds] = useState([]);
   const [isBatchReprint, setIsBatchReprint] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const mainContent = document.querySelector('aside + div');
+    if (mainContent) {
+      mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
 
   // Modals state
   const [reprintTarget, setReprintTarget] = useState(null); // barcode object
@@ -140,6 +146,13 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
 
       if (onBarcodeAction) onBarcodeAction();
       fetchDashboardData();
+
+      // Auto-move to shipments tab after 2 seconds
+      if (setActiveTab) {
+        setTimeout(() => {
+          setActiveTab('shipments');
+        }, 2000);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -545,12 +558,7 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
                   </tr>
                 </thead>
                 <tbody>
-                  {(() => {
-                    const pageSize = 10;
-                    const totalPages = Math.ceil(historyList.length / pageSize);
-                    const paginatedHistory = historyList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-                    return paginatedHistory.map(h => {
+                  {historyList.map(h => {
                       let statusBadge = h.status === 'Active' ? 'badge-verified' : 'badge-rejected';
                       const genDate = new Date(h.generated_at).toLocaleString();
                       const lastPrint = h.last_printed_at ? new Date(h.last_printed_at).toLocaleString() : 'N/A';
@@ -611,47 +619,10 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
                           </td>
                         </tr>
                       );
-                    });
-                  })()}
+                    })}
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination Controls */}
-            {historyList.length > 0 && (() => {
-              const pageSize = 10;
-              const totalPages = Math.ceil(historyList.length / pageSize);
-              return (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '10px', marginTop: '10px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    Showing {Math.min(historyList.length, (currentPage - 1) * pageSize + 1)} to {Math.min(historyList.length, currentPage * pageSize)} of {historyList.length} entries
-                  </span>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                      disabled={currentPage === 1}
-                      style={{ padding: '6px 12px', fontSize: '11px' }}
-                    >
-                      Previous
-                    </button>
-                    <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '600' }}>
-                      Page {currentPage} of {totalPages || 1}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                      disabled={currentPage >= totalPages || totalPages === 0}
-                      style={{ padding: '6px 12px', fontSize: '11px' }}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
           </>
         )}
       </div>

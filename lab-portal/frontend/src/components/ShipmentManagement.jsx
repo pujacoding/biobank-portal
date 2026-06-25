@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function ShipmentManagement({ samples, backendUrl, token, user, onShipmentAction, activeLabId, activeLabName }) {
+export default function ShipmentManagement({ samples, backendUrl, token, user, onShipmentAction, activeLabId, activeLabName, setActiveTab }) {
   const [shipments, setShipments] = useState([]);
   const [destination, setDestination] = useState('');
   const [selectedBarcodes, setSelectedBarcodes] = useState([]);
@@ -11,6 +11,14 @@ export default function ShipmentManagement({ samples, backendUrl, token, user, o
   useEffect(() => {
     setCurrentPage(1);
   }, [shipments.length]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const mainContent = document.querySelector('aside + div');
+    if (mainContent) {
+      mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentPage]);
 
   // Available specimens to ship (must be in status 'Collected', 'Consent Verified' or 'Barcode Generated')
   const shippableSamples = samples.filter(s => 
@@ -88,9 +96,14 @@ export default function ShipmentManagement({ samples, backendUrl, token, user, o
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to receive shipment');
 
-      alert(`Shipment ${shipmentId} received and registered at target depot.`);
+      alert(`Shipment ${shipmentId} received and registered at target depot. Redirecting to Storage...`);
       fetchShipments();
       if (onShipmentAction) onShipmentAction();
+      if (setActiveTab) {
+        setTimeout(() => {
+          setActiveTab('storage');
+        }, 1500);
+      }
     } catch (err) {
       alert("Error: " + err.message);
     }

@@ -1,9 +1,12 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import { initDb } from './database.js';
+import { initDb } from './utils/dbInit.js';
+import errorHandler from './middleware/errorHandler.js';
 
-// Load route controllers
+// Routes
 import authRoutes from './routes/auth.js';
 import sampleRoutes from './routes/samples.js';
 import consentRoutes from './routes/consent.js';
@@ -11,17 +14,20 @@ import barcodeRoutes from './routes/barcode.js';
 import auditRoutes from './routes/audit.js';
 import userRoutes from './routes/users.js';
 import integrationRoutes from './routes/integration.js';
-
-dotenv.config();
+import specimenTypeRoutes from './routes/specimenTypes.js';
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// Middlewares
+// =========================
+// MIDDLEWARES
+// =========================
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Bind route handlers
+// =========================
+// ROUTES
+// =========================
 app.use('/api/auth', authRoutes);
 app.use('/api/samples', sampleRoutes);
 app.use('/api/consent', consentRoutes);
@@ -29,8 +35,11 @@ app.use('/api/barcode', barcodeRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/integration', integrationRoutes);
+app.use('/api/specimen-types', specimenTypeRoutes);
 
-// Health Check / Diagnostics
+// =========================
+// HEALTH CHECK
+// =========================
 app.get('/api/status', (req, res) => {
   res.json({
     status: 'healthy',
@@ -40,29 +49,33 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Root route
+// =========================
+// ROOT ROUTE
+// =========================
 app.get('/', (req, res) => {
-  res.send("AURA Biobank Lab Portal REST API is running.");
+  res.send('AURA Biobank Lab Portal API is running 🚀');
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error("Express Error Handler:", err);
-  res.status(500).json({ error: "Internal server error occurred on the API backend." });
-});
+// =========================
+// ERROR HANDLER
+// =========================
+app.use(errorHandler);
 
-// Initialize database and start listening
+// =========================
+// START SERVER
+// =========================
 const startServer = async () => {
   try {
     // Bootstrap tables & seeds
     await initDb();
 
     app.listen(PORT, () => {
-      console.log(`[SERVER] AURA Lab Portal API running on port ${PORT}`);
-      console.log(`[SERVER] Local Health Check: http://localhost:${PORT}/api/status`);
+      console.log(`[SERVER] Running on port ${PORT}`);
+      console.log(`[SERVER] Health check: http://localhost:${PORT}/api/status`);
     });
+
   } catch (error) {
-    console.error("FATAL: Failed to bootstrap database or start server:", error);
+    console.error('[FATAL] Server failed to start:', error.message);
     process.exit(1);
   }
 };

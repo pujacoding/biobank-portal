@@ -45,6 +45,14 @@ export default function SampleList({
   }, [search, statusFilter, specimenFilter]);
 
   React.useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const mainContent = document.querySelector('aside + div');
+    if (mainContent) {
+      mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [currentPage]);
+
+  React.useEffect(() => {
     if (preSelectedSampleId && samples.length > 0) {
       const sample = samples.find(s => s.id === preSelectedSampleId);
       if (sample && sample.barcode_text) {

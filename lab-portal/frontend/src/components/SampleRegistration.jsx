@@ -4,10 +4,17 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
   // Form States
   const [gender, setGender] = useState('');
   const [age, setAge] = useState('');
-  const [specimenType, setSpecimenType] = useState('Whole Blood');
+  const [specimenType, setSpecimenType] = useState('');
   const [sampleVolume, setSampleVolume] = useState('');
   const [subjectId, setSubjectId] = useState(() => 'SUBJ-' + Math.random().toString(36).substring(2, 8).toUpperCase());
   
+  // Specimen Type Master States
+  const [specimenTypes, setSpecimenTypes] = useState([]);
+  const [selectedSpecimenId, setSelectedSpecimenId] = useState('');
+  const [specimenSearchQuery, setSpecimenSearchQuery] = useState('');
+  const [showSpecimenDropdown, setShowSpecimenDropdown] = useState(false);
+  const [customSpecimenName, setCustomSpecimenName] = useState('');
+
   // Consent Template States
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState([]);
@@ -19,7 +26,6 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
   // Inline Consent Document upload States
   const [consentVersion, setConsentVersion] = useState('v1.0');
   const [consentDate, setConsentDate] = useState(new Date().toLocaleDateString('en-CA'));
-  const [consentFile, setConsentFile] = useState(null);
   const [formKey, setFormKey] = useState(0);
 
   const [containerType, setContainerType] = useState('Tube');
@@ -50,6 +56,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
 
   // Refs for tracking clicks outside the searchable dropdown container
   const dropdownRef = useRef(null);
+  const specimenDropdownRef = useRef(null);
 
   // Capture current date/time to display to the user
   const todayDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -72,22 +79,49 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
     fetchActiveTemplates();
   }, [backendUrl, token]);
 
+  // Fetch active specimen types
+  useEffect(() => {
+    const fetchActiveSpecimenTypes = async () => {
+      try {
+        const res = await fetch(`${backendUrl}/api/specimen-types/active`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setSpecimenTypes(data.specimen_types || []);
+          if (data.specimen_types && data.specimen_types.length > 0) {
+            const blood = data.specimen_types.find(st => st.specimen_name === 'Blood');
+            if (blood) {
+              setSelectedSpecimenId(String(blood.id));
+              setSpecimenType(blood.specimen_name);
+            } else {
+              setSelectedSpecimenId(String(data.specimen_types[0].id));
+              setSpecimenType(data.specimen_types[0].specimen_name);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading active specimen types:", err);
+      }
+    };
+    fetchActiveSpecimenTypes();
+  }, [backendUrl, token]);
+
   // Click outside to close dropdown handler
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setShowDropdown(false);
       }
+      if (specimenDropdownRef.current && !specimenDropdownRef.current.contains(e.target)) {
+        setShowSpecimenDropdown(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleFileChange = (e) => {
-    if (e.target.files.length > 0) {
-      setConsentFile(e.target.files[0]);
-    }
-  };
+
 
   const selectedTemplateId = selectedTemplateIds[0] || '';
   const selectedTemplate = templates.find(t => String(t.template_id) === String(selectedTemplateId));
@@ -344,16 +378,21 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
     setSuccessMsg('');
 
     // Field checks
-    if (!gender || !age || !specimenType || !sampleVolume) {
+    if (!gender || !age || !selectedSpecimenId || !sampleVolume) {
       setError("Please complete all required subject and specimen characteristics.");
       return;
     }
 
-    // Validate consent template selection
-    if (selectedTemplateIds.length === 0) {
-      setError("Consent Type must be selected before sample submission.");
+    // Determine target specimen type name
+    const selectedST = specimenTypes.find(st => String(st.id) === String(selectedSpecimenId));
+    const isOther = selectedST && (selectedST.specimen_code === 'OTH' || selectedST.specimen_name === 'Other');
+    
+    if (isOther && (!customSpecimenName || customSpecimenName.trim() === '' || customSpecimenName.trim() === 'Other')) {
+      setError("Please provide a custom specimen description for 'Other' type.");
       return;
     }
+    
+    const finalSpecimenType = isOther ? customSpecimenName.trim() : (selectedST ? selectedST.specimen_name : '');
 
     setLoading(true);
 
@@ -370,12 +409,13 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
           subject_id: subjectId,
           gender,
           age,
-          specimen_type: specimenType,
+          specimen_type_id: parseInt(selectedSpecimenId, 10),
+          specimen_type: finalSpecimenType,
           sample_volume: sampleVolume,
           container_type: containerType,
           container_count: containerCount,
-          consent_template_id: selectedTemplateIds[0] || '',
-          consent_template_ids: selectedTemplateIds
+          consent_template_id: '',
+          consent_template_ids: []
         })
       });
 
@@ -386,47 +426,40 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       }
 
       const registeredSample = sampleData.sample;
-      let barcodeGenerated = false;
+      setSuccessMsg(`Ingestion success! Sample ${registeredSample.id} has been registered successfully. Redirecting to Consent tab...`);
 
-      // 2. If Consent file is selected, submit the consent details as Draft
-      if (consentFile) {
-        const consentResponse = await fetch(`${backendUrl}/api/consent/submit`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-            ...(activeLabId ? { 'x-active-lab-id': activeLabId } : {})
-          },
-          body: JSON.stringify({
-            sample_id: registeredSample.id,
-            consent_version: consentVersion || 'v1.0',
-            consent_date: consentDate || new Date().toLocaleDateString('en-CA'),
-            document_name: consentFile.name,
-            status: 'Draft'
-          })
-        });
-
-        const consentData = await consentResponse.json();
-
-        if (!consentResponse.ok) {
-          throw new Error(consentData.error || 'Sample registered, but consent document upload failed.');
-        }
+      if (onRegistrationSuccess) {
+        onRegistrationSuccess();
+      }
+      if (setPreSelectedSampleId) {
+        setPreSelectedSampleId(registeredSample.id);
+      }
+      if (setActiveTab) {
+        setActiveTab('consent');
       }
 
-      setSuccessMsg(`Ingestion success! Sample ${registeredSample.id} has been registered successfully and consent document saved as DRAFT. QR/Barcode generation is locked pending consent verification.`);
-
-      
       // Reset form
       setGender('');
       setAge('');
       setSelectedTemplateIds([]);
       setSearchQuery('');
       setSampleVolume('');
-      setConsentFile(null);
       setSubjectId('SUBJ-' + Math.random().toString(36).substring(2, 8).toUpperCase());
       setContainerType('Tube');
       setContainerCount(1);
       setIsManualContainerCount(false);
+      setCustomSpecimenName('');
+      setSpecimenSearchQuery('');
+      if (specimenTypes && specimenTypes.length > 0) {
+        const blood = specimenTypes.find(st => st.specimen_name === 'Blood');
+        if (blood) {
+          setSelectedSpecimenId(String(blood.id));
+          setSpecimenType(blood.specimen_name);
+        } else {
+          setSelectedSpecimenId(String(specimenTypes[0].id));
+          setSpecimenType(specimenTypes[0].specimen_name);
+        }
+      }
       setFormKey(prev => prev + 1);
 
       if (setPreSelectedSampleId) {
@@ -440,7 +473,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
 
       // Stays on the same page for 1.5 seconds so user sees details and status, then redirects
       setTimeout(() => {
-        setActiveTab('samples');
+        setActiveTab('consent');
       }, 1500);
 
     } catch (err) {
@@ -607,139 +640,95 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
             </div>
           </div>
 
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label htmlFor="subject-consent" style={{ fontWeight: '700' }}>Consent Type *</label>
-            
-            {selectedTemplateIds.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px', marginTop: '4px' }}>
-                {selectedTemplateIds.map(id => {
-                  const t = templates.find(temp => String(temp.template_id) === String(id));
-                  if (!t) return null;
-                  return (
-                    <span 
-                      key={id} 
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '4px 10px',
-                        backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                        border: '1px solid rgba(6, 182, 212, 0.3)',
-                        borderRadius: '16px',
-                        fontSize: '11px',
-                        color: 'var(--accent-cyan)',
-                        fontWeight: '600'
-                      }}
-                    >
-                      {t.consent_name} ({t.consent_code})
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedTemplateIds(prev => prev.filter(item => item !== String(id)));
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--accent-cyan)',
-                          cursor: 'pointer',
-                          padding: 0,
-                          fontSize: '14px',
-                          display: 'inline-flex',
-                          alignItems: 'center'
-                        }}
-                      >
-                        &times;
-                      </button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+        </fieldset>
 
-            {/* Custom Searchable Dropdown Selector Container */}
-            <div 
-              ref={dropdownRef} 
-              className="consent-dropdown-container" 
-              style={{ position: 'relative', marginTop: '6px' }}
-            >
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder={selectedTemplateIds.length > 0 ? "Search/select more consents..." : "[ Select Consent Type(s) ▼ ]"}
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setShowDropdown(true);
-                    }}
-                    onFocus={() => setShowDropdown(true)}
-                    style={{ cursor: 'text', paddingRight: '28px' }}
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchQuery('');
-                      }}
-                      style={{
-                        position: 'absolute',
-                        right: '10px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--text-tertiary)',
-                        fontSize: '16px',
-                        cursor: 'pointer',
-                        padding: 0
-                      }}
-                    >
-                      &times;
-                    </button>
-                  )}
+        <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)' }} />
 
-                  {showDropdown && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: 0,
-                      right: 0,
-                      zIndex: 1000,
-                      background: 'var(--bg-secondary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--border-radius-sm)',
-                      maxHeight: '220px',
-                      overflowY: 'auto',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                      marginTop: '4px'
-                    }}>
-                      {filteredTemplates.length === 0 ? (
+        {/* Section B: Specimen Information */}
+        <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Section B: Specimen Information
+          </legend>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+            <div className="form-group" style={{ marginBottom: 0, position: 'relative' }} ref={specimenDropdownRef}>
+              <label htmlFor="specimen-type-select">Specimen Type *</label>
+              <input
+                type="text"
+                id="specimen-type-select"
+                className="form-control"
+                placeholder="Search specimen type..."
+                value={specimenSearchQuery !== '' || showSpecimenDropdown ? specimenSearchQuery : (specimenTypes.find(st => String(st.id) === String(selectedSpecimenId))?.specimen_name || '')}
+                onChange={(e) => {
+                  setSpecimenSearchQuery(e.target.value);
+                  setShowSpecimenDropdown(true);
+                }}
+                onFocus={() => {
+                  setSpecimenSearchQuery('');
+                  setShowSpecimenDropdown(true);
+                }}
+              />
+              {showSpecimenDropdown && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 1000,
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--border-radius-sm)',
+                  maxHeight: '220px',
+                  overflowY: 'auto',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                  marginTop: '4px'
+                }}>
+                  {(() => {
+                    const filtered = specimenTypes.filter(st => 
+                      st.specimen_name.toLowerCase().includes(specimenSearchQuery.toLowerCase())
+                    );
+                    const grouped = {};
+                    filtered.forEach(st => {
+                      if (!grouped[st.category]) grouped[st.category] = [];
+                      grouped[st.category].push(st);
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
                         <div style={{ padding: '10px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
-                          No templates found
+                          No matching specimen types found
                         </div>
-                      ) : (
-                        filteredTemplates.map(t => {
-                          const isSelected = selectedTemplateIds.includes(String(t.template_id));
+                      );
+                    }
+
+                    return Object.keys(grouped).map(cat => (
+                      <div key={cat}>
+                        <div style={{
+                          padding: '6px 12px',
+                          fontSize: '10px',
+                          fontWeight: '700',
+                          color: 'var(--accent-cyan)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          backgroundColor: 'rgba(255,255,255,0.02)',
+                          borderBottom: '1px solid rgba(255,255,255,0.02)'
+                        }}>
+                          {cat}
+                        </div>
+                        {grouped[cat].map(st => {
+                          const isSelected = String(st.id) === String(selectedSpecimenId);
                           return (
                             <div
-                              key={t.template_id}
+                              key={st.id}
                               onClick={() => {
-                                const strId = String(t.template_id);
-                                setSelectedTemplateIds(prev => 
-                                  prev.includes(strId)
-                                    ? prev.filter(id => id !== strId)
-                                    : [...prev, strId]
-                                );
-                                setSearchQuery('');
-                                setConsentVersion(t.version);
+                                setSelectedSpecimenId(String(st.id));
+                                setSpecimenSearchQuery('');
+                                setShowSpecimenDropdown(false);
                               }}
                               style={{
-                                padding: '10px 12px',
+                                padding: '8px 16px',
                                 cursor: 'pointer',
                                 fontSize: '13px',
-                                borderBottom: '1px solid rgba(255,255,255,0.03)',
                                 backgroundColor: isSelected ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
                                 color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
                                 display: 'flex',
@@ -753,132 +742,16 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
                                 e.currentTarget.style.backgroundColor = isSelected ? 'rgba(6, 182, 212, 0.15)' : 'transparent';
                               }}
                             >
-                              <span>{t.consent_name} ({t.consent_code})</span>
-                              {isSelected && (
-                                <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>✓</span>
-                              )}
+                              <span>{st.specimen_name}</span>
+                              {isSelected && <span style={{ fontWeight: 'bold' }}>✓</span>}
                             </div>
                           );
-                        })
-                      )}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Info Icon (ⓘ) with Hover Tooltip */}
-                {selectedTemplate && (
-                  <div 
-                    style={{ position: 'relative' }}
-                    onMouseEnter={() => setShowTooltip(true)}
-                    onMouseLeave={() => setShowTooltip(false)}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setShowTooltip(!showTooltip)}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--accent-cyan)',
-                        fontSize: '18px',
-                        cursor: 'pointer',
-                        padding: '4px 8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      ⓘ
-                    </button>
-                    {showTooltip && (
-                      <div style={{
-                        position: 'absolute',
-                        bottom: '100%',
-                        right: 0,
-                        zIndex: 1100,
-                        width: '320px',
-                        backgroundColor: 'rgba(20, 20, 25, 0.98)',
-                        backdropFilter: 'blur(8px)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: 'var(--border-radius-sm)',
-                        padding: '16px',
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-                        marginBottom: '10px',
-                        color: 'var(--text-primary)'
-                      }}>
-                        <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '700', color: 'var(--accent-cyan)' }}>{selectedTemplate.consent_name}</h4>
-                        <p style={{ margin: '0 0 10px 0', fontSize: '12px', lineHeight: '1.4' }}>
-                          <strong>Purpose:</strong><br/>{parsedSummary.purpose}
-                        </p>
-                        {parsedSummary.allows && parsedSummary.allows.length > 0 && (
-                          <div style={{ marginBottom: '10px' }}>
-                            <strong>Allows:</strong>
-                            <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12px' }}>
-                              {parsedSummary.allows.map((allow, i) => (
-                                <li key={i} style={{ marginBottom: '2px' }}>{allow}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {parsedSummary.restrictions && parsedSummary.restrictions.length > 0 && (
-                          <div style={{ marginBottom: '10px' }}>
-                            <strong>Restrictions:</strong>
-                            <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12px' }}>
-                              {parsedSummary.restrictions.map((rest, i) => (
-                                <li key={i} style={{ marginBottom: '2px', color: 'var(--accent-error)' }}>{rest}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '6px', display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                          <span>Version: {selectedTemplate.version}</span>
-                          <span>Effective: {selectedTemplate.effective_date}</span>
-                        </div>
+                        })}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {/* View Full Consent Button */}
-                {selectedTemplate && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowFullConsentModal(true)}
-                    style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
-                  >
-                    View Full Consent
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </fieldset>
-
-        <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)' }} />
-
-        {/* Section B: Specimen Information */}
-        <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Section B: Specimen Information
-          </legend>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="specimen-type">Specimen Type *</label>
-              <select
-                id="specimen-type"
-                className="form-control"
-                required
-                value={specimenType}
-                onChange={(e) => setSpecimenType(e.target.value)}
-              >
-                <option value="Whole Blood">Whole Blood</option>
-                <option value="Serum">Serum</option>
-                <option value="Plasma">Plasma</option>
-                <option value="Saliva">Saliva</option>
-                <option value="Urine">Urine</option>
-                <option value="Tissue">Tissue</option>
-              </select>
+                    ));
+                  })()}
+                </div>
+              )}
             </div>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -897,6 +770,28 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
               <div className="invalid-feedback">Volume greater than 0 is required.</div>
             </div>
           </div>
+
+          {(() => {
+            const selectedST = specimenTypes.find(st => String(st.id) === String(selectedSpecimenId));
+            const isOther = selectedST && (selectedST.specimen_code === 'OTH' || selectedST.specimen_name === 'Other');
+            if (isOther) {
+              return (
+                <div className="form-group" style={{ marginTop: '4px', marginBottom: 0 }}>
+                  <label htmlFor="custom-specimen-desc">Custom Specimen Description *</label>
+                  <input
+                    type="text"
+                    id="custom-specimen-desc"
+                    className="form-control"
+                    placeholder="e.g. Hair follicle, Nail clippings, Tears"
+                    required
+                    value={customSpecimenName}
+                    onChange={(e) => setCustomSpecimenName(e.target.value)}
+                  />
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginTop: '18px' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -962,53 +857,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
           </div>
         </fieldset>
 
-        {/* Section D: Optional Inline Consent Upload */}
-        <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)' }} />
-        <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-purple)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Informed Consent Attachment (Optional)
-          </legend>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="consent-ver">Consent Version</label>
-              <input
-                type="text"
-                id="consent-ver"
-                className="form-control"
-                value={consentVersion}
-                onChange={(e) => setConsentVersion(e.target.value)}
-              />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="consent-dt">Consent Signed Date</label>
-              <input
-                type="date"
-                id="consent-dt"
-                className="form-control"
-                value={consentDate}
-                onChange={(e) => setConsentDate(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label htmlFor="consent-doc">Signed Consent File Document</label>
-            <input
-              type="file"
-              id="consent-doc"
-              className="form-control"
-              accept=".pdf,.png,.jpg,.jpeg"
-              onChange={handleFileChange}
-              style={{ padding: '8px' }}
-            />
-            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px', display: 'block' }}>
-              Supported formats: PDF, PNG, JPG (Max 5MB)
-            </span>
-          </div>
-        </fieldset>
-
-        <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)' }} />
 
         {/* Section C: Collection Information */}
         <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>

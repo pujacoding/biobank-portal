@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Dashboard({ samples, setActiveTab, user }) {
+export default function Dashboard({ samples, globalTotal, setActiveTab, user }) {
   // Compute metrics
   const todayStr = new Date().toLocaleDateString('en-CA');
   
@@ -12,7 +12,7 @@ export default function Dashboard({ samples, setActiveTab, user }) {
   // Pending Shipments: Barcode is generated (ready for shipping), but shipment not finalized (status === 'Barcode Generated')
   const pendingShipments = samples.filter(s => s.status === 'Barcode Generated').length;
   
-  const totalSamples = samples.length;
+  const totalSamples = globalTotal || samples.length;
 
   // Last 5 samples
   const recentSamples = samples.slice(0, 5);
