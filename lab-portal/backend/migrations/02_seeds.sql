@@ -152,18 +152,40 @@ ON CONFLICT (template_id) DO UPDATE SET consent_name = EXCLUDED.consent_name, co
 SELECT setval(pg_get_serial_sequence('consent_templates', 'template_id'), COALESCE(MAX(template_id), 1)) FROM consent_templates;
 
 -- 9. Seed Specimen Types
+DELETE FROM specimen_types;
 INSERT INTO specimen_types (id, specimen_code, specimen_name, category, status) VALUES
-(1, 'BLD', 'Whole Blood', 'Blood', 'Active'),
+(1, 'BLD', 'Blood', 'Blood', 'Active'),
 (2, 'SRM', 'Serum', 'Blood', 'Active'),
 (3, 'PLSM', 'Plasma', 'Blood', 'Active'),
-(4, 'DNA', 'DNA', 'Molecular', 'Active'),
-(5, 'RNA', 'RNA', 'Molecular', 'Active'),
-(6, 'TSS', 'Tissue', 'Tissue', 'Active'),
-(7, 'URN', 'Urine', 'Urine', 'Active'),
-(8, 'STL', 'Stool', 'Stool', 'Active'),
-(9, 'SLV', 'Saliva', 'Swab', 'Active'),
-(10, 'OTH', 'Other', 'Other', 'Active')
-ON CONFLICT (id) DO UPDATE SET specimen_code = EXCLUDED.specimen_code, specimen_name = EXCLUDED.specimen_name;
+(4, 'BFC', 'Buffy Coat', 'Blood', 'Active'),
+(5, 'PBMC', 'PBMC', 'Blood', 'Active'),
+(6, 'URN', 'Urine', 'Urine', 'Active'),
+(7, 'STL', 'Stool', 'Stool', 'Active'),
+(8, 'SLV', 'Saliva', 'Saliva', 'Active'),
+(9, 'BCS', 'Buccal Swab', 'Swab', 'Active'),
+(10, 'SPT', 'Sputum', 'Swab', 'Active'),
+(11, 'NPS', 'Nasopharyngeal Swab', 'Swab', 'Active'),
+(12, 'TSS', 'Tissue', 'Tissue', 'Active'),
+(13, 'FFPE', 'FFPE Tissue', 'Tissue', 'Active'),
+(14, 'FRT', 'Fresh Tissue', 'Tissue', 'Active'),
+(15, 'FZT', 'Frozen Tissue', 'Tissue', 'Active'),
+(16, 'BMA', 'Bone Marrow Aspirate', 'Fluid', 'Active'),
+(17, 'CSF', 'CSF', 'Fluid', 'Active'),
+(18, 'PLF', 'Pleural Fluid', 'Fluid', 'Active'),
+(19, 'ASF', 'Ascitic Fluid', 'Fluid', 'Active'),
+(20, 'SYF', 'Synovial Fluid', 'Fluid', 'Active'),
+(21, 'SMN', 'Semen', 'Fluid', 'Active'),
+(22, 'DNA', 'DNA', 'Molecular', 'Active'),
+(23, 'RNA', 'RNA', 'Molecular', 'Active'),
+(24, 'CLL', 'Cell Line', 'Cellular', 'Active'),
+(25, 'SCP', 'Stem Cell Product', 'Cellular', 'Active'),
+(26, 'EXO', 'Exosome', 'Molecular', 'Active'),
+(27, 'OTH', 'Other', 'Other', 'Active')
+ON CONFLICT (id) DO UPDATE SET 
+  specimen_code = EXCLUDED.specimen_code, 
+  specimen_name = EXCLUDED.specimen_name, 
+  category = EXCLUDED.category, 
+  status = EXCLUDED.status;
 
 -- Reset identity sequence for specimen types
 SELECT setval(pg_get_serial_sequence('specimen_types', 'id'), COALESCE(MAX(id), 1)) FROM specimen_types;

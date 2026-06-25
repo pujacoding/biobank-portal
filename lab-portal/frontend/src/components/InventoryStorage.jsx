@@ -23,7 +23,9 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
   const cols = [1, 2, 3, 4, 5, 6];
   
   // Allowed specimen types per freezer
-  const allowedTypes = activeUnit === 'LN2-01' ? ['DNA', 'Tissue'] : ['Whole Blood', 'Serum', 'Plasma', 'Saliva', 'Urine'];
+  const allowedTypes = activeUnit === 'LN2-01' 
+    ? ['DNA', 'RNA', 'Exosome', 'Tissue', 'FFPE Tissue', 'Fresh Tissue', 'Frozen Tissue', 'Cell Line', 'Stem Cell Product'] 
+    : ['Whole Blood', 'Blood', 'Serum', 'Plasma', 'Buffy Coat', 'PBMC', 'Urine', 'Stool', 'Saliva', 'Buccal Swab', 'Sputum', 'Nasopharyngeal Swab', 'Bone Marrow Aspirate', 'CSF', 'Pleural Fluid', 'Ascitic Fluid', 'Synovial Fluid', 'Semen', 'Other'];
 
   // Filter samples that are stored in this unit
   const storedSamples = samples.filter(s => 

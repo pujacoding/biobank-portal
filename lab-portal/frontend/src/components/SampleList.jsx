@@ -75,7 +75,7 @@ export default function SampleList({
     return matchesSearch && matchesStatus && matchesSpecimen;
   });
 
-  const uniqueSpecimenTypes = ['All', 'Whole Blood', 'Serum', 'Plasma', 'Saliva', 'Urine', 'Tissue'];
+  const uniqueSpecimenTypes = ['All', ...new Set(samples.map(s => s.specimen_type).filter(Boolean))];
   const statusTypes = ['All', 'Collected', 'Consent Verified', 'Barcode Generated'];
 
   // Visible samples that have active barcodes
