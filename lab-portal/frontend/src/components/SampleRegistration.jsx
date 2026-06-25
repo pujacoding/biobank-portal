@@ -4,13 +4,12 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
   // Form States
   const [gender, setGender] = useState('');
   const [age, setAge] = useState('');
-  const [specimenType, setSpecimenType] = useState('');
   const [sampleVolume, setSampleVolume] = useState('');
   const [subjectId, setSubjectId] = useState(() => 'SUBJ-' + Math.random().toString(36).substring(2, 8).toUpperCase());
   
   // Specimen Type Master States
   const [specimenTypes, setSpecimenTypes] = useState([]);
-  const [selectedSpecimenId, setSelectedSpecimenId] = useState('');
+  const [selectedSpecimenIds, setSelectedSpecimenIds] = useState([]);
   const [specimenSearchQuery, setSpecimenSearchQuery] = useState('');
   const [showSpecimenDropdown, setShowSpecimenDropdown] = useState(false);
   const [customSpecimenName, setCustomSpecimenName] = useState('');
@@ -92,11 +91,9 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
           if (data.specimen_types && data.specimen_types.length > 0) {
             const blood = data.specimen_types.find(st => st.specimen_name === 'Blood');
             if (blood) {
-              setSelectedSpecimenId(String(blood.id));
-              setSpecimenType(blood.specimen_name);
+              setSelectedSpecimenIds([String(blood.id)]);
             } else {
-              setSelectedSpecimenId(String(data.specimen_types[0].id));
-              setSpecimenType(data.specimen_types[0].specimen_name);
+              setSelectedSpecimenIds([String(data.specimen_types[0].id)]);
             }
           }
         }
@@ -378,16 +375,18 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
     setSuccessMsg('');
 
     // Field checks
-    if (!gender || !age || !selectedSpecimenId || !sampleVolume) {
+    if (!gender || !age || selectedSpecimenIds.length === 0 || !sampleVolume) {
       setError("Please complete all required subject and specimen characteristics.");
       return;
     }
 
-    // Determine target specimen type name
-    const selectedST = specimenTypes.find(st => String(st.id) === String(selectedSpecimenId));
-    const isOther = selectedST && (selectedST.specimen_code === 'OTH' || selectedST.specimen_name === 'Other');
+    // Determine if custom specimen is required
+    const hasOther = selectedSpecimenIds.some(id => {
+      const st = specimenTypes.find(temp => String(temp.id) === String(id));
+      return st && (st.specimen_code === 'OTH' || st.specimen_name === 'Other');
+    });
     
-    if (isOther && (!customSpecimenName || customSpecimenName.trim() === '' || customSpecimenName.trim() === 'Other')) {
+    if (hasOther && (!customSpecimenName || customSpecimenName.trim() === '' || customSpecimenName.trim() === 'Other')) {
       setError("Please provide a custom specimen description for 'Other' type.");
       return;
     }
@@ -398,47 +397,54 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       return;
     }
 
-    const finalSpecimenType = isOther ? customSpecimenName.trim() : (selectedST ? selectedST.specimen_name : '');
-
     setLoading(true);
 
     try {
-      // 1. Submit Sample Registration (defer barcode generation to verification!)
-      const sampleResponse = await fetch(`${backendUrl}/api/samples/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          ...(activeLabId ? { 'x-active-lab-id': activeLabId } : {})
-        },
-        body: JSON.stringify({
-          subject_id: subjectId,
-          gender,
-          age,
-          specimen_type_id: parseInt(selectedSpecimenId, 10),
-          specimen_type: finalSpecimenType,
-          sample_volume: sampleVolume,
-          container_type: containerType,
-          container_count: containerCount,
-          consent_template_id: selectedTemplateIds[0] || '',
-          consent_template_ids: selectedTemplateIds
-        })
-      });
+      const registeredSamples = [];
+      for (const specId of selectedSpecimenIds) {
+        const selectedST = specimenTypes.find(st => String(st.id) === String(specId));
+        const isOther = selectedST && (selectedST.specimen_code === 'OTH' || selectedST.specimen_name === 'Other');
+        const finalSpecimenType = isOther ? customSpecimenName.trim() : (selectedST ? selectedST.specimen_name : '');
 
-      const sampleData = await sampleResponse.json();
+        const sampleResponse = await fetch(`${backendUrl}/api/samples/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            ...(activeLabId ? { 'x-active-lab-id': activeLabId } : {})
+          },
+          body: JSON.stringify({
+            subject_id: subjectId,
+            gender,
+            age,
+            specimen_type_id: parseInt(specId, 10),
+            specimen_type: finalSpecimenType,
+            sample_volume: sampleVolume,
+            container_type: containerType,
+            container_count: containerCount,
+            consent_template_id: selectedTemplateIds[0] || '',
+            consent_template_ids: selectedTemplateIds
+          })
+        });
 
-      if (!sampleResponse.ok) {
-        throw new Error(sampleData.error || 'Failed to register sample');
+        const sampleData = await sampleResponse.json();
+
+        if (!sampleResponse.ok) {
+          throw new Error(sampleData.error || 'Failed to register sample');
+        }
+        registeredSamples.push(sampleData.sample);
       }
 
-      const registeredSample = sampleData.sample;
-      setSuccessMsg(`Ingestion success! Sample ${registeredSample.id} has been registered successfully. Redirecting to Consent tab...`);
+      const count = registeredSamples.length;
+      setSuccessMsg(`Ingestion success! Registered ${count} sample(s) successfully. Redirecting to Consent tab...`);
+
+      const primarySample = registeredSamples[0];
 
       if (onRegistrationSuccess) {
         onRegistrationSuccess();
       }
-      if (setPreSelectedSampleId) {
-        setPreSelectedSampleId(registeredSample.id);
+      if (setPreSelectedSampleId && primarySample) {
+        setPreSelectedSampleId(primarySample.id);
       }
       if (setActiveTab) {
         setActiveTab('consent');
@@ -448,6 +454,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       setGender('');
       setAge('');
       setSelectedTemplateIds([]);
+      setSelectedSpecimenIds([]);
       setSearchQuery('');
       setSampleVolume('');
       setSubjectId('SUBJ-' + Math.random().toString(36).substring(2, 8).toUpperCase());
@@ -459,17 +466,15 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       if (specimenTypes && specimenTypes.length > 0) {
         const blood = specimenTypes.find(st => st.specimen_name === 'Blood');
         if (blood) {
-          setSelectedSpecimenId(String(blood.id));
-          setSpecimenType(blood.specimen_name);
+          setSelectedSpecimenIds([String(blood.id)]);
         } else {
-          setSelectedSpecimenId(String(specimenTypes[0].id));
-          setSpecimenType(specimenTypes[0].specimen_name);
+          setSelectedSpecimenIds([String(specimenTypes[0].id)]);
         }
       }
       setFormKey(prev => prev + 1);
 
-      if (setPreSelectedSampleId) {
-        setPreSelectedSampleId(registeredSample.id);
+      if (setPreSelectedSampleId && primarySample) {
+        setPreSelectedSampleId(primarySample.id);
       }
 
       // Trigger cache refresh and await completion
@@ -903,19 +908,66 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
             <div className="form-group" style={{ marginBottom: 0, position: 'relative' }} ref={specimenDropdownRef}>
-              <label htmlFor="specimen-type-select">Specimen Type *</label>
+              <label htmlFor="specimen-type-select" style={{ fontWeight: '700' }}>Specimen Type *</label>
+              
+              {selectedSpecimenIds.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px', marginTop: '4px' }}>
+                  {selectedSpecimenIds.map(id => {
+                    const st = specimenTypes.find(temp => String(temp.id) === String(id));
+                    if (!st) return null;
+                    return (
+                      <span 
+                        key={id} 
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 10px',
+                          backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                          border: '1px solid rgba(6, 182, 212, 0.3)',
+                          borderRadius: '16px',
+                          fontSize: '11px',
+                          color: 'var(--accent-cyan)',
+                          fontWeight: '600'
+                        }}
+                      >
+                        {st.specimen_name}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedSpecimenIds(prev => prev.filter(item => item !== String(id)));
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--accent-cyan)',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: '14px',
+                            display: 'inline-flex',
+                            alignItems: 'center'
+                          }}
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
               <input
                 type="text"
                 id="specimen-type-select"
                 className="form-control"
-                placeholder="Search specimen type..."
-                value={specimenSearchQuery !== '' || showSpecimenDropdown ? specimenSearchQuery : (specimenTypes.find(st => String(st.id) === String(selectedSpecimenId))?.specimen_name || '')}
+                placeholder={selectedSpecimenIds.length > 0 ? "Search/select more specimen types..." : "[ Select Specimen Type(s) ▼ ]"}
+                value={specimenSearchQuery}
                 onChange={(e) => {
                   setSpecimenSearchQuery(e.target.value);
                   setShowSpecimenDropdown(true);
                 }}
                 onFocus={() => {
-                  setSpecimenSearchQuery('');
                   setShowSpecimenDropdown(true);
                 }}
               />
@@ -967,14 +1019,18 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
                           {cat}
                         </div>
                         {grouped[cat].map(st => {
-                          const isSelected = String(st.id) === String(selectedSpecimenId);
+                          const isSelected = selectedSpecimenIds.includes(String(st.id));
                           return (
                             <div
                               key={st.id}
                               onClick={() => {
-                                setSelectedSpecimenId(String(st.id));
+                                const strId = String(st.id);
+                                setSelectedSpecimenIds(prev => 
+                                  prev.includes(strId)
+                                    ? prev.filter(id => id !== strId)
+                                    : [...prev, strId]
+                                );
                                 setSpecimenSearchQuery('');
-                                setShowSpecimenDropdown(false);
                               }}
                               style={{
                                 padding: '8px 16px',
@@ -1023,9 +1079,11 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
           </div>
 
           {(() => {
-            const selectedST = specimenTypes.find(st => String(st.id) === String(selectedSpecimenId));
-            const isOther = selectedST && (selectedST.specimen_code === 'OTH' || selectedST.specimen_name === 'Other');
-            if (isOther) {
+            const hasOther = selectedSpecimenIds.some(id => {
+              const st = specimenTypes.find(temp => String(temp.id) === String(id));
+              return st && (st.specimen_code === 'OTH' || st.specimen_name === 'Other');
+            });
+            if (hasOther) {
               return (
                 <div className="form-group" style={{ marginTop: '4px', marginBottom: 0 }}>
                   <label htmlFor="custom-specimen-desc">Custom Specimen Description *</label>
