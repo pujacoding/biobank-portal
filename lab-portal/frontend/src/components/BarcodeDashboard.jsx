@@ -97,7 +97,6 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
 
   useEffect(() => {
     fetchDashboardData();
-    setCurrentPage(1);
   }, [backendUrl, token, samples, activeLabId]);
 
   // List of samples waiting for initial barcode generation
