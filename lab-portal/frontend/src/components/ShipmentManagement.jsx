@@ -20,9 +20,10 @@ export default function ShipmentManagement({ samples, backendUrl, token, user, o
     }
   }, [currentPage]);
 
-  // Available specimens to ship (must be in status 'Collected', 'Consent Verified' or 'Barcode Generated')
+  // Available specimens to ship (must be in status 'Collected', 'Consent Verified' or 'Barcode Generated' and consent is not withdrawn)
   const shippableSamples = samples.filter(s => 
-    s.status === 'Barcode Generated' || (s.barcode_text && s.status !== 'Shipped' && s.status !== 'Received' && s.status !== 'Stored')
+    s.consent_status !== 'Withdrawn' &&
+    (s.status === 'Barcode Generated' || (s.barcode_text && s.status !== 'Shipped' && s.status !== 'Received' && s.status !== 'Stored'))
   );
 
   const fetchShipments = async () => {

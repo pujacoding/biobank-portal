@@ -168,7 +168,7 @@ export async function withdrawDonorConsent(req, res, next) {
     const withdrawnAt = `${now.toLocaleDateString('en-CA')} ${now.toTimeString().split(' ')[0]}`;
     const withdrawnByName = "Super Admin (Research Portal)";
 
-    // Update consent records
+    // Update consent records & samples
     for (const sample of samplesCheck.rows) {
       if (sample.consent_id) {
         await client.query(
@@ -176,20 +176,24 @@ export async function withdrawDonorConsent(req, res, next) {
           [withdrawnAt, withdrawnByName, sample.consent_id]
         );
       }
-    }
 
-    // Update samples table
-    await client.query(
-      "UPDATE samples SET consent_status = 'Withdrawn', barcode_status = 'Unassigned', status = 'Collected' WHERE subject_id = $1",
-      [donorId]
-    );
+      const isResearchPosition = ['Stored', 'Received', 'Shipped', 'In Transit', 'Allocated', 'Retrieved'].includes(sample.status);
 
-    // Deactivate barcodes
-    for (const sample of samplesCheck.rows) {
-      await client.query(
-        "UPDATE barcodes SET status = 'Inactive' WHERE sample_id = $1 AND status = 'Active'",
-        [sample.id]
-      );
+      if (isResearchPosition) {
+        await client.query(
+          "UPDATE samples SET consent_status = 'Withdrawn' WHERE id = $1",
+          [sample.id]
+        );
+      } else {
+        await client.query(
+          "UPDATE samples SET consent_status = 'Withdrawn', barcode_status = 'Unassigned', status = 'Collected' WHERE id = $1",
+          [sample.id]
+        );
+        await client.query(
+          "UPDATE barcodes SET status = 'Inactive' WHERE sample_id = $1 AND status = 'Active'",
+          [sample.id]
+        );
+      }
     }
 
     // Add activity log
@@ -453,6 +457,12 @@ export async function storeSample(req, res, next) {
 
     await client.query('BEGIN');
 
+    const consentCheck = await client.query("SELECT consent_status FROM samples WHERE id = $1", [barcode]);
+    if (consentCheck.rows.length > 0 && consentCheck.rows[0].consent_status === 'Withdrawn') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "Operation Blocked: Sample has withdrawn consent." });
+    }
+
     await client.query(`
       UPDATE samples 
       SET location = $1, quality = $2, diagnosis = $3, status = 'Stored', retrieval_status = 'Stored', ingestion_status = 'Ingested' 
@@ -487,6 +497,12 @@ export async function qcSample(req, res, next) {
     }
 
     await client.query('BEGIN');
+
+    const consentCheck = await client.query("SELECT consent_status FROM samples WHERE id = $1", [barcode]);
+    if (consentCheck.rows.length > 0 && consentCheck.rows[0].consent_status === 'Withdrawn') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "Operation Blocked: Sample has withdrawn consent." });
+    }
 
     await client.query(`
       UPDATE samples 
@@ -523,6 +539,12 @@ export async function relocateSample(req, res, next) {
 
     await client.query('BEGIN');
 
+    const consentCheck = await client.query("SELECT consent_status FROM samples WHERE id = $1", [barcode]);
+    if (consentCheck.rows.length > 0 && consentCheck.rows[0].consent_status === 'Withdrawn') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "Operation Blocked: Sample has withdrawn consent." });
+    }
+
     const currentCheck = await client.query("SELECT location FROM samples WHERE id = $1 FOR UPDATE", [barcode]);
     const oldLocation = currentCheck.rows[0]?.location || 'Unassigned';
 
@@ -556,6 +578,12 @@ export async function retrieveSample(req, res, next) {
     }
 
     await client.query('BEGIN');
+
+    const consentCheck = await client.query("SELECT consent_status FROM samples WHERE id = $1", [barcode]);
+    if (consentCheck.rows.length > 0 && consentCheck.rows[0].consent_status === 'Withdrawn') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "Operation Blocked: Sample has withdrawn consent." });
+    }
 
     await client.query(`
       UPDATE samples 
@@ -671,6 +699,17 @@ export async function createShipment(req, res, next) {
     }
 
     await client.query('BEGIN');
+
+    // Check if any of the barcodes has withdrawn consent
+    const checkRes = await client.query(`
+      SELECT id, consent_status FROM samples WHERE id = ANY($1::varchar[])
+    `, [barcodes]);
+    for (const row of checkRes.rows) {
+      if (row.consent_status === 'Withdrawn') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Shipment Blocked: Specimen '${row.id}' has withdrawn consent.` });
+      }
+    }
 
     const id = 'SHP-' + Date.now();
     await client.query(`

@@ -89,13 +89,13 @@ export default function App() {
       await fetchSamples(token);
       
       // Locate the fresh label layout metadata and trigger the printing overlay
-      const originalSample = samples.find(s => s.id === sampleId);
+      const originalSample = (samples || []).find(s => s.id === sampleId);
       if (originalSample) {
         const printSample = {
           ...originalSample,
-          barcode_text: data.barcode.barcode_text,
-          qr_code_base64: data.barcode.qr_code_base64,
-          code128_base64: data.barcode.code128_base64
+          barcode_text: data?.barcode?.barcode_value || data?.barcode?.barcode_text || sampleId,
+          qr_code_base64: data?.barcode?.qr_code_base64,
+          code128_base64: data?.barcode?.code128_base64
         };
         handlePrintBarcode(printSample);
       }

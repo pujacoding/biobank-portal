@@ -333,18 +333,28 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
   }, [currentPage]);
 
   // Samples that need consent (consent_id is null, or verification_status is Rejected)
-  const samplesNeedConsent = samples.filter(s => !s.consent_id || s.consent_status === 'Rejected');
+  const samplesNeedConsent = (samples || []).filter(s => !s.consent_id || s.consent_status === 'Rejected');
   
   // Consent pending verification (consent_status === 'Submitted')
-  const pendingConsents = samples.filter(s => s.consent_status === 'Submitted');
+  const pendingConsents = (samples || []).filter(s => s.consent_status === 'Submitted');
 
-  const selectedSample = samples.find(s => s.id === selectedSampleId);
+  const selectedSample = (samples || []).find(s => s.id === selectedSampleId);
   const hasUploadedConsent = selectedSample && (
     (selectedSample.consent_status === 'Draft' && !showUploadForDraft) ||
     selectedSample.consent_status === 'Submitted' || 
     selectedSample.consent_status === 'Verified' ||
     (selectedSample.consent_status === 'Withdrawn' && !showUploadForWithdrawn)
   );
+
+  useEffect(() => {
+    if (selectedSample) {
+      setConsentVersion(selectedSample.consent_version || 'v1.0');
+      setConsentDate(selectedSample.consent_date || new Date().toLocaleDateString('en-CA'));
+    } else {
+      setConsentVersion('v1.0');
+      setConsentDate(new Date().toLocaleDateString('en-CA'));
+    }
+  }, [selectedSampleId, selectedSample]);
 
   const handleFileChange = (e) => {
     if (e.target.files.length > 0) {
@@ -521,15 +531,16 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
     }
   };
 
-  const handleWithdrawConsent = async () => {
+  const handleWithdrawConsent = async (sampleId) => {
     setError('');
     setSuccess('');
 
-    if (!selectedSampleId) return;
+    const targetId = typeof sampleId === 'string' ? sampleId : selectedSampleId;
+    if (!targetId) return;
 
     const confirmWithdraw = window.confirm(
-      `WARNING: Are you sure you want to withdraw patient consent for sample ${selectedSampleId}?\n\n` +
-      `This will invalidate the consent status and immediately deactivate any active barcode associated with this specimen.`
+      `WARNING: Are you sure you want to withdraw patient consent for sample ${targetId}?\n\n` +
+      `This will mark the specimen consent as WITHDRAWN and lock further operations.`
     );
     if (!confirmWithdraw) return;
 
@@ -544,7 +555,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
           ...(activeLabId ? { 'x-active-lab-id': activeLabId } : {})
         },
         body: JSON.stringify({
-          sample_id: selectedSampleId
+          sample_id: targetId
         })
       });
 
@@ -554,9 +565,12 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
         throw new Error(data.error || 'Failed to withdraw consent');
       }
 
-      alert(`Consent successfully withdrawn for sample ${selectedSampleId}! The barcode has been deactivated.`);
-      setSuccess(`Consent record successfully updated to WITHDRAWN. Barcode deactivated for sample ${selectedSampleId}.`);
+      alert(data.message || `Consent successfully withdrawn for sample ${targetId}!`);
+      setSuccess(data.message || `Consent record successfully updated to WITHDRAWN for sample ${targetId}.`);
       
+      if (targetId === selectedSampleId) {
+        setSelectedSampleId('');
+      }
       if (onConsentAction) onConsentAction();
     } catch (err) {
       setError(err.message);
@@ -811,7 +825,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                         Ingest New Consent
                       </button>
                     ) : (
-                      user.role === 'Super Admin' ? (
+                      (user.role === 'Super Admin' || user.role === 'Lab Admin') ? (
                         <button
                           type="button"
                           className="btn"
@@ -854,7 +868,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                               cursor: 'not-allowed'
                             }}
                             disabled
-                            title="Withdrawal requires Super Admin privileges."
+                            title="Withdrawal requires Admin privileges."
                           >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px' }}>
                               <circle cx="12" cy="12" r="10" />
@@ -863,7 +877,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                             Withdraw Consent
                           </button>
                           <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                            Withdrawal requires Super Admin access.
+                            Withdrawal requires Super Admin or Lab Admin access.
                           </span>
                         </div>
                       )
@@ -1204,6 +1218,28 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                                   disabled={loading}
                                 >
                                   Reject
+                                </button>
+                              )}
+
+                              {/* Withdraw */}
+                              {(consent.consent_status === 'Verified' || consent.consent_status === 'Submitted') && (user.role === 'Super Admin' || user.role === 'Lab Admin') && (
+                                <button
+                                  type="button"
+                                  className="btn"
+                                  onClick={() => handleWithdrawConsent(consent.id)}
+                                  style={{
+                                    padding: '5px 10px',
+                                    fontSize: '11px',
+                                    borderColor: 'var(--accent-error)',
+                                    color: '#fff',
+                                    background: 'var(--accent-error)',
+                                    cursor: 'pointer',
+                                    border: 'none',
+                                    borderRadius: '4px'
+                                  }}
+                                  disabled={loading}
+                                >
+                                  Withdraw
                                 </button>
                               )}
 

@@ -522,8 +522,8 @@ export async function withdrawConsent(req, res, next) {
       return res.status(400).json({ error: "Sample ID is required" });
     }
 
-    if (req.user.role !== 'Super Admin') {
-      return res.status(403).json({ error: "Access Denied: Only Super Admin is authorized to withdraw patient consent." });
+    if (req.user.role !== 'Super Admin' && req.user.role !== 'Lab Admin') {
+      return res.status(403).json({ error: "Access Denied: Only Super Admin and Lab Admin are authorized to withdraw patient consent." });
     }
 
     await client.query('BEGIN');
@@ -561,30 +561,47 @@ export async function withdrawConsent(req, res, next) {
       [withdrawnAt, withdrawnByName, sample.consent_id]
     );
 
-    // Update sample consent status to 'Withdrawn', barcode status to 'Unassigned', and sample status to 'Collected'
-    await client.query(
-      "UPDATE samples SET consent_status = 'Withdrawn', barcode_status = 'Unassigned', status = 'Collected' WHERE id = $1",
-      [sample_id]
-    );
+    const isResearchPosition = ['Stored', 'Received', 'Shipped', 'In Transit', 'Allocated', 'Retrieved'].includes(sample.status);
+    let logMsg = '';
+    let responseMsg = '';
 
-    // Deactivate active barcodes associated with this sample
-    await client.query(
-      "UPDATE barcodes SET status = 'Inactive' WHERE sample_id = $1 AND status = 'Active'",
-      [sample_id]
-    );
+    if (isResearchPosition) {
+      // Update sample consent status to 'Withdrawn' but preserve current status and barcode
+      await client.query(
+        "UPDATE samples SET consent_status = 'Withdrawn' WHERE id = $1",
+        [sample_id]
+      );
+      logMsg = `Consent withdrawn for sample ${sample_id}. Sample is in research position (${sample.status}); location and barcode preserved but locked.`;
+      responseMsg = `Consent successfully withdrawn for sample ${sample_id}. The specimen has been locked in its current position.`;
+    } else {
+      // Revert status to 'Collected', clear barcode status, and deactivate barcodes
+      await client.query(
+        "UPDATE samples SET consent_status = 'Withdrawn', barcode_status = 'Unassigned', status = 'Collected' WHERE id = $1",
+        [sample_id]
+      );
 
-    // Fetch the deactivated barcode ID if any, for auditing
-    const barcodeCheck = await client.query(
-      "SELECT barcode_id FROM barcodes WHERE sample_id = $1 AND status = 'Inactive' ORDER BY generated_at DESC LIMIT 1",
-      [sample_id]
-    );
+      // Deactivate active barcodes associated with this sample
+      await client.query(
+        "UPDATE barcodes SET status = 'Inactive' WHERE sample_id = $1 AND status = 'Active'",
+        [sample_id]
+      );
 
-    if (barcodeCheck.rows.length > 0) {
-      const barcodeId = barcodeCheck.rows[0].barcode_id;
-      await client.query(`
-        INSERT INTO barcode_audit (sample_id, barcode_id, action_type, reason, performed_by)
-        VALUES ($1, $2, 'Barcode Deactivated', 'Consent withdrawn by patient', $3)
-      `, [sample_id, barcodeId, req.user.userId]);
+      // Fetch the deactivated barcode ID if any, for auditing
+      const barcodeCheck = await client.query(
+        "SELECT barcode_id FROM barcodes WHERE sample_id = $1 AND status = 'Inactive' ORDER BY generated_at DESC LIMIT 1",
+        [sample_id]
+      );
+
+      if (barcodeCheck.rows.length > 0) {
+        const barcodeId = barcodeCheck.rows[0].barcode_id;
+        await client.query(`
+          INSERT INTO barcode_audit (sample_id, barcode_id, action_type, reason, performed_by)
+          VALUES ($1, $2, 'Barcode Deactivated', 'Consent withdrawn by patient', $3)
+        `, [sample_id, barcodeId, req.user.userId]);
+      }
+
+      logMsg = `Consent withdrawn for sample ${sample_id}. Barcode deactivated and sample status set back to Collected.`;
+      responseMsg = `Consent successfully withdrawn for sample ${sample_id}. Barcode has been deactivated.`;
     }
 
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "";
@@ -597,7 +614,7 @@ export async function withdrawConsent(req, res, next) {
     `, [
       req.user.userId, userRow.name, userRow.role, userRow.lab_name || "Aura Biobank Admin Center", sample.consent_id,
       `Consent status updated to Withdrawn (withdrawn_by: ${withdrawnByName}, withdrawn_at: ${withdrawnAt})`,
-      `Consent withdrawn for sample ${sample_id}. Barcode deactivated and sample status set back to Collected.`,
+      logMsg,
       clientIp
     ]);
 
@@ -605,7 +622,7 @@ export async function withdrawConsent(req, res, next) {
 
     res.json({
       success: true,
-      message: `Consent successfully withdrawn for sample ${sample_id}. Barcode has been deactivated.`
+      message: responseMsg
     });
 
   } catch (error) {

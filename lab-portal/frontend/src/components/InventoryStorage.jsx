@@ -285,7 +285,9 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
 
                 if (matchingSample) {
                   btnClass = 'well-btn-occupied';
-                  if (matchingSample.qc_status === 'Failed') {
+                  if (matchingSample.consent_status === 'Withdrawn') {
+                    borderCol = 'var(--accent-error)';
+                  } else if (matchingSample.qc_status === 'Failed') {
                     borderCol = 'var(--accent-red)';
                   } else if (matchingSample.qc_status === 'Verified') {
                     borderCol = 'var(--accent-success)';
@@ -312,8 +314,8 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
                       height: '60px',
                       borderRadius: '8px',
                       border: `1.5px solid ${borderCol}`,
-                      background: matchingSample ? 'rgba(0, 242, 254, 0.05)' : 'var(--bg-primary)',
-                      color: matchingSample ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                      background: matchingSample ? (matchingSample.consent_status === 'Withdrawn' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(0, 242, 254, 0.05)') : 'var(--bg-primary)',
+                      color: matchingSample ? (matchingSample.consent_status === 'Withdrawn' ? 'var(--accent-error)' : 'var(--text-primary)') : 'var(--text-tertiary)',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -329,14 +331,14 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
                       <span style={{ 
                         fontSize: '8px', 
                         fontWeight: '700', 
-                        color: 'var(--accent-cyan)', 
+                        color: matchingSample.consent_status === 'Withdrawn' ? 'var(--accent-error)' : 'var(--accent-cyan)', 
                         marginTop: '2px', 
                         maxWidth: '90%', 
                         overflow: 'hidden', 
                         textOverflow: 'ellipsis', 
                         whiteSpace: 'nowrap' 
                       }}>
-                        {matchingSample.id.split('-').pop()}
+                        {matchingSample.consent_status === 'Withdrawn' ? 'WITHDRAWN' : matchingSample.id.split('-').pop()}
                       </span>
                     )}
                   </button>
@@ -382,13 +384,34 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
                 </div>
               </div>
 
+              {selectedSpecimen.consent_status === 'Withdrawn' && (
+                <div style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  borderRadius: 'var(--border-radius-sm)',
+                  padding: '12px 16px',
+                  color: 'var(--accent-error)',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginTop: '10px'
+                }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  <span><strong>Consent Withdrawn:</strong> This sample is locked. No operations are permitted.</span>
+                </div>
+              )}
+
               {/* QC Validation Form */}
               <form onSubmit={handleQcSubmit} style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Update QC Validation Metrics</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '11px' }}>QC Verdict</label>
-                    <select className="form-control" value={qcStatus} onChange={(e) => setQcStatus(e.target.value)}>
+                    <select className="form-control" value={qcStatus} onChange={(e) => setQcStatus(e.target.value)} disabled={selectedSpecimen.consent_status === 'Withdrawn'}>
                       <option value="Verified">Verified / Approved</option>
                       <option value="Failed">Failed / Discard</option>
                     </select>
@@ -401,18 +424,46 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
                       placeholder="e.g. RIN: 9.6"
                       value={qcQuality} 
                       onChange={(e) => setQcQuality(e.target.value)} 
+                      disabled={selectedSpecimen.consent_status === 'Withdrawn'}
                     />
                   </div>
                 </div>
-                <button type="submit" className="btn btn-secondary" style={{ width: '100%', padding: '6px' }}>🔬 Apply QC Results</button>
+                <button 
+                  type="submit" 
+                  className="btn btn-secondary" 
+                  style={{ width: '100%', padding: '6px', cursor: selectedSpecimen.consent_status === 'Withdrawn' ? 'not-allowed' : 'pointer' }}
+                  disabled={selectedSpecimen.consent_status === 'Withdrawn'}
+                >
+                  🔬 Apply QC Results
+                </button>
               </form>
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-                <button className="btn btn-secondary" style={{ flex: 1, borderColor: 'var(--accent-purple)', color: 'var(--accent-purple)' }} onClick={handleStartRelocation}>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ 
+                    flex: 1, 
+                    borderColor: selectedSpecimen.consent_status === 'Withdrawn' ? 'var(--border-color)' : 'var(--accent-purple)', 
+                    color: selectedSpecimen.consent_status === 'Withdrawn' ? 'var(--text-tertiary)' : 'var(--accent-purple)',
+                    cursor: selectedSpecimen.consent_status === 'Withdrawn' ? 'not-allowed' : 'pointer'
+                  }} 
+                  onClick={handleStartRelocation}
+                  disabled={selectedSpecimen.consent_status === 'Withdrawn'}
+                >
                   📍 Relocate
                 </button>
-                <button className="btn btn-secondary" style={{ flex: 1, borderColor: 'var(--accent-red)', color: 'var(--accent-red)' }} onClick={handleRetrieveSpecimen}>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ 
+                    flex: 1, 
+                    borderColor: selectedSpecimen.consent_status === 'Withdrawn' ? 'var(--border-color)' : 'var(--accent-red)', 
+                    color: selectedSpecimen.consent_status === 'Withdrawn' ? 'var(--text-tertiary)' : 'var(--accent-red)',
+                    cursor: selectedSpecimen.consent_status === 'Withdrawn' ? 'not-allowed' : 'pointer'
+                  }} 
+                  onClick={handleRetrieveSpecimen}
+                  disabled={selectedSpecimen.consent_status === 'Withdrawn'}
+                >
                   📥 Retrieve
                 </button>
               </div>

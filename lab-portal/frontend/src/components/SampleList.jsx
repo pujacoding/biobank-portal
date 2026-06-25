@@ -78,8 +78,8 @@ export default function SampleList({
   const uniqueSpecimenTypes = ['All', ...new Set(samples.map(s => s.specimen_type).filter(Boolean))];
   const statusTypes = ['All', 'Collected', 'Consent Verified', 'Barcode Generated'];
 
-  // Visible samples that have active barcodes
-  const printableFilteredSamples = filteredSamples.filter(s => s.barcode_text);
+  // Visible samples that have active barcodes and whose consent has not been withdrawn
+  const printableFilteredSamples = filteredSamples.filter(s => s.barcode_text && s.consent_status !== 'Withdrawn');
 
   const handleSelectAllChange = (e) => {
     if (e.target.checked) {
@@ -455,11 +455,11 @@ export default function SampleList({
                         <td style={{ textAlign: 'center' }}>
                           <input 
                             type="checkbox" 
-                            disabled={!hasBarcode}
+                            disabled={!hasBarcode || sample.consent_status === 'Withdrawn'}
                             checked={selectedSampleIds.includes(sample.id)}
                             onChange={() => handleSelectSampleChange(sample.id)}
-                            title={!hasBarcode ? "No barcode generated yet" : ""}
-                            style={{ cursor: hasBarcode ? 'pointer' : 'not-allowed' }}
+                            title={sample.consent_status === 'Withdrawn' ? "Consent withdrawn for this sample" : (!hasBarcode ? "No barcode generated yet" : "")}
+                            style={{ cursor: (hasBarcode && sample.consent_status !== 'Withdrawn') ? 'pointer' : 'not-allowed' }}
                           />
                         </td>
                         <td style={{ fontFamily: 'monospace', fontWeight: '700' }}>{sample.id}</td>
@@ -480,9 +480,13 @@ export default function SampleList({
                           <span className="badge badge-pending">Pending</span>
                         </td>
                         <td>
-                          <span className={`badge ${statusBadge}`}>
-                            {sample.status}
-                          </span>
+                          {sample.consent_status === 'Withdrawn' ? (
+                            <span className="badge badge-rejected">WITHDRAWN</span>
+                          ) : (
+                            <span className={`badge ${statusBadge}`}>
+                              {sample.status}
+                            </span>
+                          )}
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -498,22 +502,46 @@ export default function SampleList({
                               <>
                                 <button
                                   onClick={() => handleOpenPreview(sample, false)}
+                                  disabled={sample.consent_status === 'Withdrawn'}
                                   className="btn btn-secondary"
-                                  style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--accent-cyan)', borderColor: 'var(--accent-cyan)' }}
+                                  style={{ 
+                                    padding: '3px 8px', 
+                                    fontSize: '11px', 
+                                    color: sample.consent_status === 'Withdrawn' ? 'var(--text-tertiary)' : 'var(--accent-cyan)', 
+                                    borderColor: sample.consent_status === 'Withdrawn' ? 'var(--border-color)' : 'var(--accent-cyan)',
+                                    opacity: sample.consent_status === 'Withdrawn' ? 0.5 : 1,
+                                    cursor: sample.consent_status === 'Withdrawn' ? 'not-allowed' : 'pointer'
+                                  }}
                                 >
                                   Print Barcode
                                 </button>
                                 <button
                                   onClick={() => handleReprintRequest(sample)}
+                                  disabled={sample.consent_status === 'Withdrawn'}
                                   className="btn btn-secondary"
-                                  style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--accent-purple)', borderColor: 'var(--accent-purple)' }}
+                                  style={{ 
+                                    padding: '3px 8px', 
+                                    fontSize: '11px', 
+                                    color: sample.consent_status === 'Withdrawn' ? 'var(--text-tertiary)' : 'var(--accent-purple)', 
+                                    borderColor: sample.consent_status === 'Withdrawn' ? 'var(--border-color)' : 'var(--accent-purple)',
+                                    opacity: sample.consent_status === 'Withdrawn' ? 0.5 : 1,
+                                    cursor: sample.consent_status === 'Withdrawn' ? 'not-allowed' : 'pointer'
+                                  }}
                                 >
                                   Reprint Barcode
                                 </button>
                                 <button
                                   onClick={() => handleDownloadPDF(sample, false)}
+                                  disabled={sample.consent_status === 'Withdrawn'}
                                   className="btn btn-secondary"
-                                  style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--accent-success)', borderColor: 'var(--accent-success)' }}
+                                  style={{ 
+                                    padding: '3px 8px', 
+                                    fontSize: '11px', 
+                                    color: sample.consent_status === 'Withdrawn' ? 'var(--text-tertiary)' : 'var(--accent-success)', 
+                                    borderColor: sample.consent_status === 'Withdrawn' ? 'var(--border-color)' : 'var(--accent-success)',
+                                    opacity: sample.consent_status === 'Withdrawn' ? 0.5 : 1,
+                                    cursor: sample.consent_status === 'Withdrawn' ? 'not-allowed' : 'pointer'
+                                  }}
                                 >
                                   Download PDF
                                 </button>
@@ -523,8 +551,14 @@ export default function SampleList({
                             {!hasBarcode && (sample.status === 'Consent Verified') && (
                               <button
                                 onClick={() => onGenerateBarcode(sample.id)}
+                                disabled={sample.consent_status === 'Withdrawn'}
                                 className="btn btn-primary"
-                                style={{ padding: '3px 8px', fontSize: '11px' }}
+                                style={{ 
+                                  padding: '3px 8px', 
+                                  fontSize: '11px',
+                                  opacity: sample.consent_status === 'Withdrawn' ? 0.5 : 1,
+                                  cursor: sample.consent_status === 'Withdrawn' ? 'not-allowed' : 'pointer'
+                                }}
                               >
                                 Generate Barcode
                               </button>

@@ -112,15 +112,17 @@ export async function getHistory(req, res, next) {
       SELECT b.barcode_id, b.sample_id, b.barcode_value, b.barcode_type, b.generated_at, b.print_count, b.status,
              b.qr_code_base64, b.code128_base64,
              u.name as generated_by_name,
+             s.consent_status,
              (SELECT MAX(action_timestamp) 
               FROM barcode_audit ba 
               WHERE ba.barcode_id = b.barcode_id AND ba.action_type IN ('Barcode Printed', 'Barcode Reprinted')) as last_printed_at
       FROM barcodes b
       LEFT JOIN users u ON b.generated_by = u.id
+      LEFT JOIN samples s ON b.sample_id = s.id
     `;
     const params = [];
     if (req.user.labId) {
-      sql += ` JOIN samples s ON b.sample_id = s.id WHERE s.lab_id = $1`;
+      sql += ` WHERE s.lab_id = $1`;
       params.push(req.user.labId);
     }
     sql += ` ORDER BY b.generated_at DESC`;
@@ -325,7 +327,7 @@ export async function reprintBarcode(req, res, next) {
     await client.query('BEGIN');
 
     let sql = `
-      SELECT b.* FROM barcodes b
+      SELECT b.*, s.consent_status FROM barcodes b
       JOIN samples s ON b.sample_id = s.id
       WHERE b.sample_id = $1 AND b.status = 'Active'
     `;
@@ -339,6 +341,11 @@ export async function reprintBarcode(req, res, next) {
     if (barcodeCheck.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: "No active barcode label mapping found for this sample or access denied." });
+    }
+
+    if (barcodeCheck.rows[0].consent_status === 'Withdrawn') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "Reprint Blocked: Sample has withdrawn consent." });
     }
 
     const barcode = barcodeCheck.rows[0];
@@ -399,7 +406,7 @@ export async function regenerateBarcode(req, res, next) {
     await client.query('BEGIN');
 
     let sql = `
-      SELECT b.* FROM barcodes b
+      SELECT b.*, s.consent_status FROM barcodes b
       JOIN samples s ON b.sample_id = s.id
       WHERE b.sample_id = $1 AND b.status = 'Active'
     `;
@@ -413,6 +420,11 @@ export async function regenerateBarcode(req, res, next) {
     if (activeCheck.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: "No active barcode found to regenerate or access denied." });
+    }
+
+    if (activeCheck.rows[0].consent_status === 'Withdrawn') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "Regeneration Blocked: Sample has withdrawn consent." });
     }
 
     const oldBarcode = activeCheck.rows[0];

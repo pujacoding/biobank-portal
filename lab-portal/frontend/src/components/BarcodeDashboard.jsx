@@ -102,9 +102,9 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
 
   // List of samples waiting for initial barcode generation
   // (status is 'Consent Verified' and no active barcode)
-  const pendingSamples = samples.filter(s => {
+  const pendingSamples = (samples || []).filter(s => {
     const hasActiveBarcode = historyList.some(h => h.sample_id === s.id && h.status === 'Active');
-    return s.status === 'Consent Verified' && !hasActiveBarcode;
+    return s.status === 'Consent Verified' && s.consent_status !== 'Withdrawn' && !hasActiveBarcode;
   });
 
   const handleGenerate = async (sampleId) => {
@@ -133,13 +133,13 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
       setSuccess(`Barcode generated successfully for sample ${sampleId}! Opening print dialog...`);
       
       // Auto-trigger print
-      const originalSample = samples.find(s => s.id === sampleId);
+      const originalSample = (samples || []).find(s => s.id === sampleId);
       if (originalSample) {
         const printSample = {
           ...originalSample,
-          barcode_text: data.barcode.barcode_value,
-          qr_code_base64: data.barcode.qr_code_base64,
-          code128_base64: data.barcode.code128_base64
+          barcode_text: data?.barcode?.barcode_value || data?.barcode?.barcode_text || sampleId,
+          qr_code_base64: data?.barcode?.qr_code_base64,
+          code128_base64: data?.barcode?.code128_base64
         };
         onPrintBarcode(printSample);
       }
@@ -591,7 +591,8 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
                                     className="btn btn-secondary" 
                                     onClick={() => handleOpenReprint(h)}
                                     style={{ padding: '3px 8px', fontSize: '11px' }}
-                                    disabled={loading}
+                                    disabled={loading || h.consent_status === 'Withdrawn'}
+                                    title={h.consent_status === 'Withdrawn' ? "Consent withdrawn" : ""}
                                   >
                                     Reprint
                                   </button>
@@ -601,7 +602,8 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
                                       className="btn btn-danger" 
                                       onClick={() => handleOpenRegenerate(h)}
                                       style={{ padding: '3px 8px', fontSize: '11px', backgroundColor: 'var(--accent-warning)', border: 'none' }}
-                                      disabled={loading}
+                                      disabled={loading || h.consent_status === 'Withdrawn'}
+                                      title={h.consent_status === 'Withdrawn' ? "Consent withdrawn" : ""}
                                     >
                                       Regenerate
                                     </button>
