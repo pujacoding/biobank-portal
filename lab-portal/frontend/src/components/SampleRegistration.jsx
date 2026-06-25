@@ -392,6 +392,12 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       return;
     }
     
+    // Validate consent template selection
+    if (selectedTemplateIds.length === 0) {
+      setError("Consent Type must be selected before sample submission.");
+      return;
+    }
+
     const finalSpecimenType = isOther ? customSpecimenName.trim() : (selectedST ? selectedST.specimen_name : '');
 
     setLoading(true);
@@ -414,8 +420,8 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
           sample_volume: sampleVolume,
           container_type: containerType,
           container_count: containerCount,
-          consent_template_id: '',
-          consent_template_ids: []
+          consent_template_id: selectedTemplateIds[0] || '',
+          consent_template_ids: selectedTemplateIds
         })
       });
 
@@ -640,6 +646,251 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
             </div>
           </div>
 
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label htmlFor="subject-consent" style={{ fontWeight: '700' }}>Consent Type *</label>
+            
+            {selectedTemplateIds.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px', marginTop: '4px' }}>
+                {selectedTemplateIds.map(id => {
+                  const t = templates.find(temp => String(temp.template_id) === String(id));
+                  if (!t) return null;
+                  return (
+                    <span 
+                      key={id} 
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                        border: '1px solid rgba(6, 182, 212, 0.3)',
+                        borderRadius: '16px',
+                        fontSize: '11px',
+                        color: 'var(--accent-cyan)',
+                        fontWeight: '600'
+                      }}
+                    >
+                      {t.consent_name} ({t.consent_code})
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedTemplateIds(prev => prev.filter(item => item !== String(id)));
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--accent-cyan)',
+                          cursor: 'pointer',
+                          padding: 0,
+                          fontSize: '14px',
+                          display: 'inline-flex',
+                          alignItems: 'center'
+                        }}
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Custom Searchable Dropdown Selector Container */}
+            <div 
+              ref={dropdownRef} 
+              className="consent-dropdown-container" 
+              style={{ position: 'relative', marginTop: '6px' }}
+            >
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder={selectedTemplateIds.length > 0 ? "Search/select more consents..." : "[ Select Consent Type(s) ▼ ]"}
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setShowDropdown(true);
+                    }}
+                    onFocus={() => setShowDropdown(true)}
+                    style={{ cursor: 'text', paddingRight: '28px' }}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                      }}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--text-tertiary)',
+                        fontSize: '16px',
+                        cursor: 'pointer',
+                        padding: 0
+                      }}
+                    >
+                      &times;
+                    </button>
+                  )}
+
+                  {showDropdown && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      zIndex: 1000,
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--border-radius-sm)',
+                      maxHeight: '220px',
+                      overflowY: 'auto',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                      marginTop: '4px'
+                    }}>
+                      {filteredTemplates.length === 0 ? (
+                        <div style={{ padding: '10px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                          No templates found
+                        </div>
+                      ) : (
+                        filteredTemplates.map(t => {
+                          const isSelected = selectedTemplateIds.includes(String(t.template_id));
+                          return (
+                            <div
+                              key={t.template_id}
+                              onClick={() => {
+                                const strId = String(t.template_id);
+                                setSelectedTemplateIds(prev => 
+                                  prev.includes(strId)
+                                    ? prev.filter(id => id !== strId)
+                                    : [...prev, strId]
+                                );
+                                setSearchQuery('');
+                                setConsentVersion(t.version);
+                              }}
+                              style={{
+                                padding: '10px 12px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                backgroundColor: isSelected ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
+                                color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'rgba(6, 182, 212, 0.1)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = isSelected ? 'rgba(6, 182, 212, 0.15)' : 'transparent';
+                              }}
+                            >
+                              <span>{t.consent_name} ({t.consent_code})</span>
+                              {isSelected && (
+                                <span style={{ color: 'var(--accent-cyan)', fontWeight: 'bold' }}>✓</span>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Info Icon (ⓘ) with Hover Tooltip */}
+                {selectedTemplate && (
+                  <div 
+                    style={{ position: 'relative' }}
+                    onMouseEnter={() => setShowTooltip(true)}
+                    onMouseLeave={() => setShowTooltip(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setShowTooltip(!showTooltip)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--accent-cyan)',
+                        fontSize: '18px',
+                        cursor: 'pointer',
+                        padding: '4px 8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      ⓘ
+                    </button>
+                    {showTooltip && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '100%',
+                        right: 0,
+                        zIndex: 1100,
+                        width: '320px',
+                        backgroundColor: 'rgba(20, 20, 25, 0.98)',
+                        backdropFilter: 'blur(8px)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 'var(--border-radius-sm)',
+                        padding: '16px',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                        marginBottom: '10px',
+                        color: 'var(--text-primary)'
+                      }}>
+                        <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: '700', color: 'var(--accent-cyan)' }}>{selectedTemplate.consent_name}</h4>
+                        <p style={{ margin: '0 0 10px 0', fontSize: '12px', lineHeight: '1.4' }}>
+                          <strong>Purpose:</strong><br/>{parsedSummary.purpose}
+                        </p>
+                        {parsedSummary.allows && parsedSummary.allows.length > 0 && (
+                          <div style={{ marginBottom: '10px' }}>
+                            <strong>Allows:</strong>
+                            <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12px' }}>
+                              {parsedSummary.allows.map((allow, i) => (
+                                <li key={i} style={{ marginBottom: '2px' }}>{allow}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {parsedSummary.restrictions && parsedSummary.restrictions.length > 0 && (
+                          <div style={{ marginBottom: '10px' }}>
+                            <strong>Restrictions:</strong>
+                            <ul style={{ margin: '4px 0', paddingLeft: '16px', fontSize: '12px' }}>
+                              {parsedSummary.restrictions.map((rest, i) => (
+                                <li key={i} style={{ marginBottom: '2px', color: 'var(--accent-error)' }}>{rest}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '6px', display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                          <span>Version: {selectedTemplate.version}</span>
+                          <span>Effective: {selectedTemplate.effective_date}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* View Full Consent Button */}
+                {selectedTemplate && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowFullConsentModal(true)}
+                    style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                  >
+                    View Full Consent
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </fieldset>
 
         <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)' }} />
