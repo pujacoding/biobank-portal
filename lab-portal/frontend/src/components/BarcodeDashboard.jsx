@@ -13,13 +13,16 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
   const [success, setSuccess] = useState('');
   const [selectedBarcodeIds, setSelectedBarcodeIds] = useState([]);
   const [isBatchReprint, setIsBatchReprint] = useState(false);
+  const [currentPendingPage, setCurrentPendingPage] = useState(1);
+  const [currentHistoryPage, setCurrentHistoryPage] = useState(1);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     const mainContent = document.querySelector('aside + div');
     if (mainContent) {
       mainContent.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, []);
+  }, [currentPendingPage, currentHistoryPage]);
 
   // Modals state
   const [reprintTarget, setReprintTarget] = useState(null); // barcode object
@@ -97,6 +100,8 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
 
   useEffect(() => {
     fetchDashboardData();
+    setCurrentPendingPage(1);
+    setCurrentHistoryPage(1);
   }, [backendUrl, token, samples, activeLabId]);
 
   // List of samples waiting for initial barcode generation
@@ -105,6 +110,14 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
     const hasActiveBarcode = historyList.some(h => h.sample_id === s.id && h.status === 'Active');
     return s.status === 'Consent Verified' && s.consent_status !== 'Withdrawn' && !hasActiveBarcode;
   });
+
+  const pendingPageSize = 10;
+  const totalPendingPages = Math.ceil(pendingSamples.length / pendingPageSize);
+  const paginatedPendingSamples = pendingSamples.slice((currentPendingPage - 1) * pendingPageSize, currentPendingPage * pendingPageSize);
+
+  const historyPageSize = 10;
+  const totalHistoryPages = Math.ceil(historyList.length / historyPageSize);
+  const paginatedHistoryList = historyList.slice((currentHistoryPage - 1) * historyPageSize, currentHistoryPage * historyPageSize);
 
   const handleGenerate = async (sampleId) => {
     setError('');
@@ -471,39 +484,73 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
             All consent-verified specimens have active barcodes mapped. No samples in queue.
           </p>
         ) : (
-          <div className="table-container" style={{ maxHeight: '200px', overflowY: 'auto' }}>
-            <table className="custom-table" style={{ fontSize: '13px' }}>
-              <thead>
-                <tr>
-                  <th>Sample ID</th>
-                  <th>Specimen Type</th>
-                  <th>Consent ID</th>
-                  <th>Consent Date</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingSamples.map(sample => (
-                  <tr key={sample.id}>
-                    <td style={{ fontWeight: '700', fontFamily: 'monospace' }}>{sample.id}</td>
-                    <td>{sample.specimen_type}</td>
-                    <td style={{ fontFamily: 'monospace', color: 'var(--accent-purple)' }}>{sample.consent_id}</td>
-                    <td>{sample.consent_date}</td>
-                    <td>
-                      <button 
-                        className="btn btn-primary" 
-                        onClick={() => handleGenerate(sample.id)}
-                        style={{ padding: '4px 10px', fontSize: '12px' }}
-                        disabled={loading}
-                      >
-                        Generate Label
-                      </button>
-                    </td>
+          <>
+            <div className="table-container">
+              <table className="custom-table" style={{ fontSize: '13px' }}>
+                <thead>
+                  <tr>
+                    <th>Sample ID</th>
+                    <th>Specimen Type</th>
+                    <th>Consent ID</th>
+                    <th>Consent Date</th>
+                    <th>Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paginatedPendingSamples.map(sample => (
+                    <tr key={sample.id}>
+                      <td style={{ fontWeight: '700', fontFamily: 'monospace' }}>{sample.id}</td>
+                      <td>{sample.specimen_type}</td>
+                      <td style={{ fontFamily: 'monospace', color: 'var(--accent-purple)' }}>{sample.consent_id}</td>
+                      <td>{sample.consent_date}</td>
+                      <td>
+                        <button 
+                          className="btn btn-primary" 
+                          onClick={() => handleGenerate(sample.id)}
+                          style={{ padding: '4px 10px', fontSize: '12px' }}
+                          disabled={loading}
+                        >
+                          Generate Label
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {pendingSamples.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '10px', marginTop: '10px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Showing {Math.min(pendingSamples.length, (currentPendingPage - 1) * pendingPageSize + 1)} to {Math.min(pendingSamples.length, currentPendingPage * pendingPageSize)} of {pendingSamples.length} entries
+                </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setCurrentPendingPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPendingPage === 1}
+                    style={{ padding: '6px 12px', fontSize: '11px' }}
+                  >
+                    Previous
+                  </button>
+                  <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '600' }}>
+                    Page {currentPendingPage} of {totalPendingPages || 1}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setCurrentPendingPage(prev => Math.min(prev + 1, totalPendingPages))}
+                    disabled={currentPendingPage >= totalPendingPages || totalPendingPages === 0}
+                    style={{ padding: '6px 12px', fontSize: '11px' }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -557,7 +604,7 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
                   </tr>
                 </thead>
                 <tbody>
-                  {historyList.map(h => {
+                  {paginatedHistoryList.map(h => {
                       let statusBadge = h.status === 'Active' ? 'badge-verified' : 'badge-rejected';
                       const genDate = new Date(h.generated_at).toLocaleString();
                       const lastPrint = h.last_printed_at ? new Date(h.last_printed_at).toLocaleString() : 'N/A';
@@ -624,6 +671,38 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {historyList.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '10px', marginTop: '10px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Showing {Math.min(historyList.length, (currentHistoryPage - 1) * historyPageSize + 1)} to {Math.min(historyList.length, currentHistoryPage * historyPageSize)} of {historyList.length} entries
+                </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setCurrentHistoryPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentHistoryPage === 1}
+                    style={{ padding: '6px 12px', fontSize: '11px' }}
+                  >
+                    Previous
+                  </button>
+                  <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: '600' }}>
+                    Page {currentHistoryPage} of {totalHistoryPages || 1}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setCurrentHistoryPage(prev => Math.min(prev + 1, totalHistoryPages))}
+                    disabled={currentHistoryPage >= totalHistoryPages || totalHistoryPages === 0}
+                    style={{ padding: '6px 12px', fontSize: '11px' }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
