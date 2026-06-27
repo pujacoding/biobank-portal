@@ -417,7 +417,12 @@ export async function verifyConsent(req, res, next) {
     );
 
     // Fetch linked sample
-    const sampleCheck = await client.query("SELECT * FROM samples WHERE consent_id = $1 FOR UPDATE", [consent_id]);
+    const sampleCheck = await client.query(`
+      SELECT s.*, st.specimen_code
+      FROM samples s
+      LEFT JOIN specimen_types st ON s.specimen_type_id = st.id
+      WHERE s.consent_id = $1 FOR UPDATE
+    `, [consent_id]);
     const sample = sampleCheck.rows[0];
 
     const userResult = await client.query(`
@@ -439,7 +444,12 @@ export async function verifyConsent(req, res, next) {
 
       // Generate barcode on the fly
       const sample_id = sample.id;
-      const barcode_value = sample_id;
+      const specimenCode = sample.specimen_code || 'SMP';
+      const sampleIdParts = sample_id.split('-');
+      const year = sampleIdParts[2] || new Date().getFullYear();
+      const seqStr = sampleIdParts[3] || '000001';
+      const seqNum = parseInt(seqStr, 10);
+      const barcode_value = `${specimenCode}-${year}-${String(seqNum).padStart(4, '0')}`;
       const scanUrl = `http://localhost:5173/?scan=${sample_id}`;
 
       // Generate barcodes (QR Code encodes scanUrl, Code128 encodes barcode_value)

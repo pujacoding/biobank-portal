@@ -66,7 +66,7 @@ export default function TraceSpecimen({ backendUrl, token, user, activeLabId, ac
               id="trace-search-input"
               type="text" 
               className="form-control" 
-              placeholder="e.g. AURA-SMP-2026-000001" 
+              placeholder="e.g. BLD-2026-0007" 
               required
               value={barcodeQuery}
               onChange={(e) => setBarcodeQuery(e.target.value)}

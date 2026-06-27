@@ -152,9 +152,10 @@ export async function generateBarcode(req, res, next) {
     await client.query('BEGIN');
 
     let sql = `
-      SELECT s.*, COALESCE(c.verification_status, s.consent_status) as consent_status 
+      SELECT s.*, COALESCE(c.verification_status, s.consent_status) as consent_status, st.specimen_code
       FROM samples s
       LEFT JOIN consent c ON s.consent_id = c.id
+      LEFT JOIN specimen_types st ON s.specimen_type_id = st.id
       WHERE s.id = $1
     `;
     const params = [sample_id];
@@ -191,7 +192,13 @@ export async function generateBarcode(req, res, next) {
       });
     }
 
-    const barcode_value = sample_id;
+    const specimenCode = sample.specimen_code || 'SMP';
+    const sampleIdParts = sample_id.split('-');
+    const year = sampleIdParts[2] || new Date().getFullYear();
+    const seqStr = sampleIdParts[3] || '000001';
+    const seqNum = parseInt(seqStr, 10);
+    const barcode_value = `${specimenCode}-${year}-${String(seqNum).padStart(4, '0')}`;
+
     const scanUrl = `http://localhost:5173/?scan=${sample_id}`;
     const qrPng = await generateBarcodeBuffer('qrcode', scanUrl, { height: 40, width: 40 });
     const code128Png = await generateBarcodeBuffer('code128', barcode_value, { height: 12, includetext: true, textxalign: 'center' });
@@ -452,7 +459,26 @@ export async function regenerateBarcode(req, res, next) {
       [sample_id]
     );
     const revIndex = parseInt(historyCountRes.rows[0].count, 10); 
-    const newBarcodeValue = `${sample_id}-R${revIndex}`;
+
+    // Retrieve specimen_code to construct the new barcode value consistently
+    const sampleSpecimenRes = await client.query(`
+      SELECT s.*, st.specimen_code
+      FROM samples s
+      LEFT JOIN specimen_types st ON s.specimen_type_id = st.id
+      WHERE s.id = $1
+    `, [sample_id]);
+
+    let baseBarcodeValue = sample_id;
+    if (sampleSpecimenRes.rows.length > 0) {
+      const sampleObj = sampleSpecimenRes.rows[0];
+      const specimenCode = sampleObj.specimen_code || 'SMP';
+      const sampleIdParts = sample_id.split('-');
+      const year = sampleIdParts[2] || new Date().getFullYear();
+      const seqStr = sampleIdParts[3] || '000001';
+      const seqNum = parseInt(seqStr, 10);
+      baseBarcodeValue = `${specimenCode}-${year}-${String(seqNum).padStart(4, '0')}`;
+    }
+    const newBarcodeValue = `${baseBarcodeValue}-R${revIndex}`;
 
     const scanUrl = `http://localhost:5173/?scan=${sample_id}`;
     const qrPng = await generateBarcodeBuffer('qrcode', scanUrl, { height: 40, width: 40 });
