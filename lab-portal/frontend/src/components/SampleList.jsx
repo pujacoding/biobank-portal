@@ -429,6 +429,8 @@ export default function SampleList({
                   <th>Subject ID</th>
                   <th>Specimen Type</th>
                   <th>Collection Date</th>
+                  <th>Created By</th>
+                  <th>Created At</th>
                   <th>Barcode Status</th>
                   <th>Shipment Status</th>
                   <th>Current Status</th>
@@ -473,6 +475,8 @@ export default function SampleList({
                           )}
                         </td>
                         <td>{sample.collection_date}</td>
+                        <td>{sample.collector_name || 'System'}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{sample.created_at ? new Date(sample.created_at).toLocaleString() : 'N/A'}</td>
                         <td>
                           <span className={`badge ${barcodeBadgeClass}`}>{barcodeStatusText}</span>
                         </td>

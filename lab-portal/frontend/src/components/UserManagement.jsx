@@ -1079,6 +1079,8 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                       <th>Email Address</th>
                       <th>Role</th>
                       <th>Assigned Laboratory</th>
+                      <th>Created By</th>
+                      <th>Created At</th>
                       <th>Account Status</th>
                       <th>Actions</th>
                     </tr>
@@ -1109,6 +1111,8 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                               </span>
                             </td>
                             <td>{u.lab_name || 'System Administrator'}</td>
+                            <td>{u.created_by || 'System'}</td>
+                            <td style={{ whiteSpace: 'nowrap' }}>{u.created_date ? new Date(u.created_date).toLocaleString() : (u.created_at ? new Date(u.created_at).toLocaleString() : 'N/A')}</td>
                             <td>
                               <span className={`badge ${badgeClass}`}>{u.status}</span>
                             </td>
@@ -1201,6 +1205,8 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                   <tr>
                     <th>Lab Name</th>
                     <th>Location Address</th>
+                    <th>Created By</th>
+                    <th>Created At</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -1210,6 +1216,8 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                     <tr key={l.id}>
                       <td style={{ fontWeight: '700' }}>{l.name}</td>
                       <td>{l.location_address}</td>
+                      <td>{l.created_by || 'System'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{l.created_at ? new Date(l.created_at).toLocaleString() : 'N/A'}</td>
                       <td>
                         <span className={`badge ${l.status === 'Active' ? 'badge-verified' : 'badge-rejected'}`}>{l.status}</span>
                       </td>
@@ -1257,6 +1265,8 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                     <th>Template Name</th>
                     <th>Code</th>
                     <th>Version</th>
+                    <th>Created By</th>
+                    <th>Created At</th>
                     <th>Effective Date</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -1268,6 +1278,8 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                       <td style={{ fontWeight: '700' }}>{t.consent_name}</td>
                       <td style={{ fontFamily: 'monospace' }}>{t.consent_code}</td>
                       <td>{t.version}</td>
+                      <td>{t.created_by || 'Super Admin'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{t.created_at ? new Date(t.created_at).toLocaleString() : 'N/A'}</td>
                       <td>{t.effective_date}</td>
                       <td>
                         <span className={`badge ${t.status === 'Active' ? 'badge-verified' : 'badge-rejected'}`}>{t.status}</span>

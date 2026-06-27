@@ -541,9 +541,12 @@ export async function createLab(req, res, next) {
       return res.status(400).json({ error: "A laboratory with this name already exists." });
     }
 
+    const creatorCheck = await client.query("SELECT name FROM users WHERE id = $1", [req.user.userId]);
+    const creatorName = creatorCheck.rows[0]?.name || "System";
+
     const result = await client.query(
-      "INSERT INTO labs (name, location_address, status) VALUES ($1, $2, 'Active') RETURNING id",
-      [name.trim(), location_address.trim()]
+      "INSERT INTO labs (name, location_address, status, created_by) VALUES ($1, $2, 'Active', $3) RETURNING id",
+      [name.trim(), location_address.trim(), creatorName]
     );
 
     const labId = result.rows[0].id;

@@ -265,6 +265,8 @@ export default function SpecimenTypeMaster({ backendUrl, token, user }) {
                   <th>Specimen Code</th>
                   <th>Specimen Name</th>
                   <th>Category</th>
+                  <th>Created By</th>
+                  <th>Created At</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -279,6 +281,8 @@ export default function SpecimenTypeMaster({ backendUrl, token, user }) {
                         {st.category}
                       </span>
                     </td>
+                    <td>{st.created_by || 'System Admin'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{st.created_at ? new Date(st.created_at).toLocaleString() : 'N/A'}</td>
                     <td>
                       <span className={`badge ${st.status === 'Active' ? 'badge-verified' : 'badge-rejected'}`}>
                         {st.status}

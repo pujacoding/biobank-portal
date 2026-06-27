@@ -49,15 +49,15 @@ export async function createType(req, res, next) {
       return res.status(400).json({ error: "A specimen type with this code or name already exists." });
     }
 
-    // Insert
-    await query(
-      "INSERT INTO specimen_types (specimen_code, specimen_name, category, status) VALUES ($1, $2, $3, $4)",
-      [codeUpper, nameTrim, catTrim, finalStatus]
-    );
-
-    // Fetch user details for audit trail
+    // Fetch user details for creator name and audit trail
     const userResult = await query("SELECT u.name, r.role_name as role, l.name as lab_name FROM users u LEFT JOIN roles r ON u.role_id = r.role_id LEFT JOIN labs l ON u.lab_id = l.id WHERE u.id = $1", [req.user.userId]);
     const userRow = userResult.rows[0] || { name: "System Admin", role: "Super Admin", lab_name: "Aura Biobank Admin Center" };
+
+    // Insert
+    await query(
+      "INSERT INTO specimen_types (specimen_code, specimen_name, category, status, created_by) VALUES ($1, $2, $3, $4, $5)",
+      [codeUpper, nameTrim, catTrim, finalStatus, userRow.name]
+    );
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "";
 
     // Insert audit log

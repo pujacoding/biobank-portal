@@ -58,10 +58,13 @@ export async function createTemplate(req, res, next) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    const creatorCheck = await query("SELECT name FROM users WHERE id = $1", [req.user.userId]);
+    const creatorName = creatorCheck.rows[0]?.name || "Super Admin";
+
     const insertResult = await query(
-      `INSERT INTO consent_templates (consent_name, consent_code, consent_summary, consent_details, version, effective_date, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING template_id`,
-      [name, code, typeof summary === 'object' ? JSON.stringify(summary) : summary, details, version, effective_date || new Date().toLocaleDateString('en-CA'), status || 'Active']
+      `INSERT INTO consent_templates (consent_name, consent_code, consent_summary, consent_details, version, effective_date, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING template_id`,
+      [name, code, typeof summary === 'object' ? JSON.stringify(summary) : summary, details, version, effective_date || new Date().toLocaleDateString('en-CA'), status || 'Active', creatorName]
     );
 
     const newId = insertResult.lastID;
