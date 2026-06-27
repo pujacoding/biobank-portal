@@ -66,6 +66,23 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
 
   // Consent Templates Form fields & states
   const [consentTemplates, setConsentTemplates] = useState([]);
+  const [specimenTypes, setSpecimenTypes] = useState([]);
+
+  useEffect(() => {
+    const fetchSpecimenTypes = async () => {
+      try {
+        const res = await fetch(`${backendUrl}/api/specimen-types/active`);
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setSpecimenTypes(data.specimen_types || []);
+        }
+      } catch (err) {
+        console.error("Error loading specimen types in UserManagement:", err);
+      }
+    };
+    fetchSpecimenTypes();
+  }, [backendUrl]);
+
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState(null);
   const [templateName, setTemplateName] = useState('');
@@ -598,6 +615,270 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
     }
   };
 
+  const handleDownloadTemplatePDF = (template) => {
+    try {
+      const { jsPDF } = window.jspdf;
+      if (!jsPDF) {
+        throw new Error("jsPDF library not loaded.");
+      }
+
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageHeight = 297;
+      const pageWidth = 210;
+      const margin = 15;
+      const printableWidth = pageWidth - (margin * 2); // 180mm
+      let currentY = 20;
+
+      const checkPageBreak = (neededHeight) => {
+        if (currentY + neededHeight > pageHeight - margin) {
+          doc.addPage();
+          currentY = margin + 10;
+          doc.setFont("Helvetica", "italic");
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text(`Consent Template: ${template.consent_name} (${template.consent_code})`, margin, margin);
+          doc.line(margin, margin + 2, margin + printableWidth, margin + 2);
+        }
+      };
+
+      const printText = (text, x, y, size = 9, style = 'normal', color = [31, 41, 55]) => {
+        doc.setFont("Helvetica", style);
+        doc.setFontSize(size);
+        doc.setTextColor(color[0], color[1], color[2]);
+        doc.text(text, x, y);
+      };
+
+      const printBullet = (text, size = 9) => {
+        checkPageBreak(5);
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(size);
+        doc.setTextColor(31, 41, 55);
+        const lines = doc.splitTextToSize(`• ${text}`, printableWidth - 5);
+        lines.forEach((line, index) => {
+          checkPageBreak(5);
+          doc.text(index === 0 ? `•` : ` `, margin, currentY);
+          doc.text(index === 0 ? line.substring(2) : line, margin + 4, currentY);
+          currentY += 5;
+        });
+      };
+
+      // Header Page 1
+      printText("AURA BIOBANK", margin, currentY, 18, "bold", [59, 130, 246]);
+      currentY += 8;
+
+      printText(`CONSENT TEMPLATE: ${template.consent_name.toUpperCase()}`, margin, currentY, 14, "bold", [31, 41, 55]);
+      currentY += 5;
+
+      // Divider line
+      doc.setDrawColor(229, 231, 235);
+      doc.line(margin, currentY, margin + printableWidth, currentY);
+      currentY += 8;
+
+      // 1. Participant Information
+      printText("1. Participant Information", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+
+      // Draw gray card
+      doc.setFillColor(243, 244, 246);
+      doc.rect(margin, currentY, printableWidth, 42, 'F');
+
+      printText("Full Name: Jane Doe (SAMPLE PARTICIPANT)", margin + 6, currentY + 8, 9, "normal");
+      printText("Patient ID: SUBJ-DUMMY123", margin + 95, currentY + 8, 9, "normal");
+      printText("Age: 45", margin + 6, currentY + 18, 9, "normal");
+      printText("Gender: [ ] Male   [X] Female   [ ] Other", margin + 95, currentY + 18, 9, "normal");
+      printText("Address: 123 Health St, Medical City", margin + 6, currentY + 28, 9, "normal");
+      printText("Contact Number: +1-555-0100", margin + 6, currentY + 36, 9, "normal");
+      currentY += 48;
+
+      // 2. Study Information
+      printText("2. Study Information", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printText("I hereby confirm that I have been informed about the biobank study and understand that:", margin, currentY, 9, "normal");
+      currentY += 6;
+      printBullet("My biological samples (blood / tissue / saliva / DNA) may be collected");
+      printBullet("These samples will be stored in a biobank for future research purposes");
+      printBullet("My data may be used for medical research, disease studies, and scientific analysis");
+      currentY += 3;
+
+      // 3. Type of Samples Collected
+      printText("3. Type of Samples Collected", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+
+      const typesList = specimenTypes.length > 0 ? specimenTypes : [
+        { specimen_name: 'Blood' },
+        { specimen_name: 'Urine' },
+        { specimen_name: 'Saliva' },
+        { specimen_name: 'Stool' },
+        { specimen_name: 'Serum' },
+        { specimen_name: 'Plasma' },
+        { specimen_name: 'Buffy Coat' },
+        { specimen_name: 'PBMC' },
+        { specimen_name: 'Tissue' }
+      ];
+
+      const colWidth = 60;
+      let startX = margin;
+      let count = 0;
+
+      typesList.forEach((t) => {
+        const typeName = t.specimen_name;
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(31, 41, 55);
+        doc.text(`[ ] ${typeName}`, startX + (count % 3) * colWidth, currentY);
+        if (count % 3 === 2) {
+          currentY += 6;
+          checkPageBreak(6);
+        }
+        count++;
+      });
+      if (count % 3 !== 0) {
+        currentY += 6;
+      }
+      currentY += 4;
+
+      // Parse template summary
+      let summaryObj = { purpose: "", allows: [], restrictions: [] };
+      try {
+        summaryObj = typeof template.consent_summary === 'string'
+          ? JSON.parse(template.consent_summary)
+          : template.consent_summary;
+      } catch (e) {
+        summaryObj = { purpose: template.consent_summary || "", allows: [], restrictions: [] };
+      }
+
+      // 4. Purpose of Use
+      checkPageBreak(25);
+      printText("4. Purpose of Use", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      if (summaryObj.purpose) {
+        const lines = doc.splitTextToSize(summaryObj.purpose, printableWidth);
+        lines.forEach(line => {
+          checkPageBreak(5);
+          printText(line, margin, currentY, 9, "normal");
+          currentY += 5;
+        });
+      } else {
+        printBullet("Disease research");
+        printBullet("Genetic studies");
+        printBullet("Drug development");
+        printBullet("Future unspecified medical research (if applicable)");
+      }
+      currentY += 3;
+
+      // 5. Privacy & Confidentiality
+      checkPageBreak(25);
+      printText("5. Privacy & Confidentiality", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("My personal identity will be kept confidential");
+      printBullet("Data will be coded/anonymized before use");
+      printBullet("Only authorized researchers will access the data");
+      currentY += 3;
+
+      // 6. Risks & Benefits
+      checkPageBreak(25);
+      printText("6. Risks & Benefits", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("I understand there may be minimal physical risk during sample collection");
+      printBullet("No direct medical benefit is guaranteed");
+      printBullet("Participation is voluntary");
+      currentY += 3;
+
+      // 7. Commercial Use
+      checkPageBreak(25);
+      printText("7. Commercial Use", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("I understand that my samples may be used for commercial research");
+      printBullet("I will not receive financial benefit from any discoveries or products");
+      currentY += 3;
+
+      // 8. Withdrawal Right
+      checkPageBreak(25);
+      printText("8. Withdrawal Right", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("I can withdraw my consent at any time without penalty");
+      printBullet("After withdrawal, no new use of my sample/data will occur");
+      currentY += 3;
+
+      // 9. Sample Storage
+      checkPageBreak(25);
+      printText("9. Sample Storage", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("Samples may be stored for: 25 years");
+      printBullet("After completion, samples may be destroyed or anonymized further");
+      currentY += 3;
+
+      // 10. Consent Declaration
+      checkPageBreak(25);
+      printText("10. Consent Declaration", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printText("I confirm that:", margin, currentY, 9, "normal");
+      currentY += 5;
+      printBullet("I have read and understood all the information above");
+      printBullet("I voluntarily agree to participate in this biobank study");
+      currentY += 2;
+
+      printText("[ ] I Agree      [ ] I Do Not Agree", margin, currentY, 9.5, "bold", [31, 41, 55]);
+      currentY += 8;
+
+      // Template Specific Legal Details
+      if (template.consent_details) {
+        checkPageBreak(25);
+        printText("Template Legal Clauses:", margin, currentY, 9.5, "bold", [75, 85, 99]);
+        currentY += 5;
+        const detailsLines = doc.splitTextToSize(template.consent_details, printableWidth);
+        detailsLines.forEach(line => {
+          checkPageBreak(4.5);
+          printText(line, margin, currentY, 8.5, "normal", [55, 65, 81]);
+          currentY += 4.5;
+        });
+        currentY += 4;
+      }
+
+      // 11. Signature
+      checkPageBreak(40);
+      printText("11. Signature", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 8;
+
+      doc.setDrawColor(209, 213, 219);
+      doc.line(margin, currentY + 8, margin + 50, currentY + 8);
+      printText("Participant Signature", margin, currentY + 12, 8.5, "normal", [107, 114, 128]);
+      printText("Date: __________", margin, currentY + 17, 8.5, "normal", [107, 114, 128]);
+
+      doc.line(margin + 65, currentY + 8, margin + 115, currentY + 8);
+      printText("Witness Name & Signature", margin + 65, currentY + 12, 8.5, "normal", [107, 114, 128]);
+      printText("Date: __________", margin + 65, currentY + 17, 8.5, "normal", [107, 114, 128]);
+
+      doc.line(margin + 130, currentY + 8, margin + 180, currentY + 8);
+      printText("Investigator Name & Signature", margin + 130, currentY + 12, 8.5, "normal", [107, 114, 128]);
+      printText("Date: __________", margin + 130, currentY + 17, 8.5, "normal", [107, 114, 128]);
+      currentY += 26;
+
+      // 12. Contact Information
+      checkPageBreak(25);
+      printText("12. Contact Information", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printText("For any queries or withdrawal:", margin, currentY, 9, "normal");
+      currentY += 5;
+      printText("Institution: Aura Biobank Admin Center", margin, currentY, 9, "normal");
+      currentY += 5;
+      printText("Contact Number: +1 (555) 019-2838", margin, currentY, 9, "normal");
+      currentY += 5;
+      printText("Email: support@aurabiobank.org", margin, currentY, 9, "normal");
+
+      // Save PDF
+      doc.save(`Template_${template.consent_code}_v${template.version}.pdf`);
+    } catch (err) {
+      console.error("Failed to generate PDF:", err);
+      alert("Error generating PDF: " + err.message);
+    }
+  };
+
   // Search and filter mappings
   const filteredUsers = users.filter(u => {
     const matchesSearch = 
@@ -998,7 +1279,14 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                             onClick={() => handleOpenEditTemplate(t)} 
                             style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--accent-cyan)', borderColor: 'var(--accent-cyan)' }}
                           >
-                            Edit / View
+                            Edit
+                          </button>
+                          <button 
+                            className="btn btn-secondary" 
+                            onClick={() => handleDownloadTemplatePDF(t)} 
+                            style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--accent-purple)', borderColor: 'var(--accent-purple)' }}
+                          >
+                            View PDF
                           </button>
                           <button 
                             className="btn btn-secondary" 
