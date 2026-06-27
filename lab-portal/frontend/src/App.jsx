@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from './config';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import SampleRegistration from './components/SampleRegistration';
@@ -14,7 +15,7 @@ import ShipmentManagement from './components/ShipmentManagement';
 import TraceSpecimen from './components/TraceSpecimen';
 import SpecimenTypeMaster from './components/SpecimenTypeMaster';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || window.AURA_BACKEND_URL || 'http://localhost:5001';
+const BACKEND_URL = API_BASE_URL;
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('aura_lab_token') || null);
