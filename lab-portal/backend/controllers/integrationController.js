@@ -614,6 +614,19 @@ export async function traceSample(req, res, next) {
   try {
     const { barcode } = req.params;
 
+    // 1. Resolve target sample_id from barcode_value in barcodes or barcode_history
+    let targetSampleId = barcode;
+    const barcodeCheck = await query(`
+      SELECT sample_id FROM barcodes WHERE barcode_value = $1
+      UNION
+      SELECT sample_id FROM barcode_history WHERE barcode_value = $1
+      LIMIT 1
+    `, [barcode]);
+
+    if (barcodeCheck.rows.length > 0) {
+      targetSampleId = barcodeCheck.rows[0].sample_id;
+    }
+
     const sampleRes = await query(`
       SELECT s.*, l.name as lab_name, l.location_address as lab_location, 
              u.name as collector_name, ct.consent_name, ct.consent_code
@@ -622,7 +635,7 @@ export async function traceSample(req, res, next) {
       LEFT JOIN users u ON s.collector_id = u.id
       LEFT JOIN consent_templates ct ON s.consent_template_id = ct.template_id
       WHERE s.id = $1
-    `, [barcode]);
+    `, [targetSampleId]);
 
     if (sampleRes.rows.length === 0) {
       return res.status(404).json({ error: "Specimen barcode not found in records directory." });
@@ -637,9 +650,9 @@ export async function traceSample(req, res, next) {
       LEFT JOIN roles r ON u.role_id = r.role_id
       WHERE ba.sample_id = $1
       ORDER BY ba.action_timestamp ASC
-    `, [barcode]);
+    `, [targetSampleId]);
 
-    const barcodeRes = await query("SELECT * FROM barcodes WHERE sample_id = $1 AND status = 'Active'", [barcode]);
+    const barcodeRes = await query("SELECT * FROM barcodes WHERE sample_id = $1 AND status = 'Active'", [targetSampleId]);
 
     res.json({
       success: true,
