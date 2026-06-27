@@ -1028,6 +1028,14 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
 
                     <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                       <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => handleDownloadConsentPDF(sample)}
+                        style={{ flex: 1.2, padding: '8px', fontSize: '12px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)', cursor: 'pointer' }}
+                      >
+                        View PDF
+                      </button>
+                      <button
                         className="btn btn-secondary"
                         onClick={() => handleVerifyConsent(sample.consent_id, 'Rejected')}
                         style={{ flex: 1, padding: '8px', fontSize: '12px', borderColor: 'var(--accent-error)', color: 'var(--accent-error)', cursor: !activeLabId ? 'not-allowed' : 'pointer' }}
