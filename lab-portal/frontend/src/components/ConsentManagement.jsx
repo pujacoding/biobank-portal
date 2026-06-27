@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 export default function ConsentManagement({ samples, user, backendUrl, token, onConsentAction, preSelectedSampleId, setPreSelectedSampleId, setActiveTab, activeLabId, activeLabName }) {
   const [templates, setTemplates] = useState([]);
+  const [specimenTypes, setSpecimenTypes] = useState([]);
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -20,51 +21,26 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
     fetchTemplates();
   }, [backendUrl, token]);
 
+  useEffect(() => {
+    const fetchSpecimenTypes = async () => {
+      try {
+        const res = await fetch(`${backendUrl}/api/specimen-types/active`);
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setSpecimenTypes(data.specimen_types || []);
+        }
+      } catch (err) {
+        console.error("Error loading specimen types in ConsentManagement:", err);
+      }
+    };
+    fetchSpecimenTypes();
+  }, [backendUrl]);
+
   const handleDownloadConsentPDF = (consentItem) => {
     try {
       const { jsPDF } = window.jspdf;
       if (!jsPDF) {
         throw new Error("jsPDF library not loaded.");
-      }
-
-      // 1. Get the template IDs for this consent
-      let templateIds = [];
-      if (consentItem.consent_template_ids) {
-        try {
-          templateIds = JSON.parse(consentItem.consent_template_ids);
-        } catch (e) {
-          templateIds = [consentItem.consent_template_id];
-        }
-      } else if (consentItem.consent_template_id) {
-        templateIds = [consentItem.consent_template_id];
-      }
-
-      // Filter templates matching these IDs
-      let selectedTemplates = [];
-      if (Array.isArray(templateIds) && templateIds.length > 0) {
-        selectedTemplates = templates.filter(t => templateIds.map(String).includes(String(t.template_id)));
-      }
-
-      // If we couldn't match by ID, let's match by name from consent_type
-      if (selectedTemplates.length === 0 && consentItem.consent_type) {
-        const names = consentItem.consent_type.split(',').map(s => s.trim().toLowerCase());
-        selectedTemplates = templates.filter(t => names.includes(t.consent_name.toLowerCase()));
-      }
-
-      // Fallback if still empty
-      if (selectedTemplates.length === 0) {
-        selectedTemplates = [{
-          consent_name: consentItem.consent_type || "General Biobank Consent",
-          consent_code: "GBC",
-          version: consentItem.consent_version || "v1.0",
-          effective_date: consentItem.consent_date || "N/A",
-          consent_summary: JSON.stringify({
-            purpose: "Authorizes storage of biological samples in the AURA Biobank.",
-            allows: ["Sample storage", "Future approved research use"],
-            restrictions: ["Personal identity will remain protected."]
-          }),
-          consent_details: "This document establishes consent for the collection and storage of biological materials and associated health data in the AURA Biobank."
-        }];
       }
 
       const doc = new jsPDF({
@@ -82,210 +58,216 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
       const checkPageBreak = (neededHeight) => {
         if (currentY + neededHeight > pageHeight - margin) {
           doc.addPage();
-          currentY = margin;
-          // Draw running header on new pages
+          currentY = margin + 10;
+          // Running header on new pages
           doc.setFont("Helvetica", "italic");
           doc.setFontSize(8);
           doc.setTextColor(150, 150, 150);
-          doc.text("AURA Biobank Consent Document", margin, currentY);
-          doc.line(margin, currentY + 2, margin + printableWidth, currentY + 2);
-          currentY += 8;
+          doc.text("AURA Biobank Consent Document", margin, margin);
+          doc.line(margin, margin + 2, margin + printableWidth, margin + 2);
         }
       };
 
-      // Draw Header Page 1
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(18);
-      doc.setTextColor(59, 130, 246); // Brand color #3b82f6 (Aura primary blue)
-      doc.text("AURA BIOBANK", margin, currentY);
+      const printText = (text, x, y, size = 9, style = 'normal', color = [31, 41, 55]) => {
+        doc.setFont("Helvetica", style);
+        doc.setFontSize(size);
+        doc.setTextColor(color[0], color[1], color[2]);
+        doc.text(text, x, y);
+      };
+
+      const printBullet = (text, size = 9) => {
+        checkPageBreak(5);
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(size);
+        doc.setTextColor(31, 41, 55);
+        const lines = doc.splitTextToSize(`• ${text}`, printableWidth - 5);
+        lines.forEach((line, index) => {
+          checkPageBreak(5);
+          doc.text(index === 0 ? `•` : ` `, margin, currentY);
+          doc.text(index === 0 ? line.substring(2) : line, margin + 4, currentY);
+          currentY += 5;
+        });
+      };
+
+      // Header Page 1
+      printText("AURA BIOBANK", margin, currentY, 18, "bold", [59, 130, 246]);
       currentY += 8;
 
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(31, 41, 55);
-      doc.text("OFFICIAL CONSENT AGREEMENT RECORD", margin, currentY);
+      printText("INFORMED CONSENT AGREEMENT RECORD", margin, currentY, 14, "bold", [31, 41, 55]);
       currentY += 5;
 
-      // Draw separator line
+      // Divider line
       doc.setDrawColor(229, 231, 235);
       doc.line(margin, currentY, margin + printableWidth, currentY);
-      currentY += 10;
-
-      // Participant & Metadata Card
-      doc.setFillColor(243, 244, 246);
-      doc.rect(margin, currentY, printableWidth, 32, 'F');
-      
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(75, 85, 99);
-      doc.text("PARTICIPANT DETAILS", margin + 5, currentY + 6);
-      doc.text("RECORD METADATA", margin + 95, currentY + 6);
-
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(9);
-      doc.setTextColor(31, 41, 55);
-      doc.text(`Subject ID: ${consentItem.subject_id}`, margin + 5, currentY + 12);
-      doc.text(`Age / Gender: ${consentItem.age || 'N/A'} / ${consentItem.gender || 'N/A'}`, margin + 5, currentY + 18);
-      doc.text(`Sample ID: ${consentItem.id || 'N/A'}`, margin + 5, currentY + 24);
-
-      doc.text(`Consent ID: ${consentItem.consent_id || 'N/A'}`, margin + 95, currentY + 12);
-      doc.text(`Signed Date: ${consentItem.consent_date || 'N/A'}`, margin + 95, currentY + 18);
-      doc.text(`Status: ${consentItem.consent_status || 'Pending'}`, margin + 95, currentY + 24);
-      currentY += 40;
-
-      // Add each template's detail
-      selectedTemplates.forEach((template, index) => {
-        // Divider between templates if not the first one
-        if (index > 0) {
-          checkPageBreak(15);
-          doc.setDrawColor(229, 231, 235);
-          doc.line(margin, currentY, margin + printableWidth, currentY);
-          currentY += 10;
-        }
-
-        checkPageBreak(25);
-        // Header
-        doc.setFont("Helvetica", "bold");
-        doc.setFontSize(12);
-        doc.setTextColor(31, 41, 55);
-        doc.text(`${index + 1}. ${template.consent_name} (${template.consent_code})`, margin, currentY);
-        currentY += 6;
-
-        // Version & Date
-        doc.setFont("Helvetica", "italic");
-        doc.setFontSize(8.5);
-        doc.setTextColor(107, 114, 128);
-        doc.text(`Version: ${template.version}  |  Effective Date: ${template.effective_date}`, margin, currentY);
-        currentY += 6;
-
-        // Summary details
-        let summaryObj = { purpose: "", allows: [], restrictions: [] };
-        try {
-          summaryObj = typeof template.consent_summary === 'string' 
-            ? JSON.parse(template.consent_summary) 
-            : template.consent_summary;
-        } catch (e) {
-          summaryObj = { purpose: template.consent_summary, allows: [], restrictions: [] };
-        }
-
-        // Purpose
-        if (summaryObj.purpose) {
-          checkPageBreak(15);
-          doc.setFont("Helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(75, 85, 99);
-          doc.text("Purpose:", margin, currentY);
-          currentY += 5;
-
-          doc.setFont("Helvetica", "normal");
-          doc.setFontSize(9);
-          doc.setTextColor(31, 41, 55);
-          const purposeLines = doc.splitTextToSize(summaryObj.purpose, printableWidth);
-          purposeLines.forEach(line => {
-            checkPageBreak(5);
-            doc.text(line, margin, currentY);
-            currentY += 5;
-          });
-          currentY += 2;
-        }
-
-        // Allows
-        if (summaryObj.allows && summaryObj.allows.length > 0) {
-          checkPageBreak(15);
-          doc.setFont("Helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(16, 185, 129); // Green text
-          doc.text("Permitted Activities (Allows):", margin, currentY);
-          currentY += 5;
-
-          doc.setFont("Helvetica", "normal");
-          doc.setFontSize(9);
-          doc.setTextColor(31, 41, 55);
-          summaryObj.allows.forEach(allow => {
-            const allowLines = doc.splitTextToSize(`• ${allow}`, printableWidth);
-            allowLines.forEach(line => {
-              checkPageBreak(5);
-              doc.text(line, margin, currentY);
-              currentY += 5;
-            });
-          });
-          currentY += 2;
-        }
-
-        // Restrictions
-        if (summaryObj.restrictions && summaryObj.restrictions.length > 0) {
-          checkPageBreak(15);
-          doc.setFont("Helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(239, 68, 68); // Red text
-          doc.text("Restrictions / Limitations:", margin, currentY);
-          currentY += 5;
-
-          doc.setFont("Helvetica", "normal");
-          doc.setFontSize(9);
-          doc.setTextColor(31, 41, 55);
-          summaryObj.restrictions.forEach(restriction => {
-            const restrictionLines = doc.splitTextToSize(`• ${restriction}`, printableWidth);
-            restrictionLines.forEach(line => {
-              checkPageBreak(5);
-              doc.text(line, margin, currentY);
-              currentY += 5;
-            });
-          });
-          currentY += 2;
-        }
-
-        // Full legal text
-        if (template.consent_details) {
-          checkPageBreak(20);
-          doc.setFont("Helvetica", "bold");
-          doc.setFontSize(9.5);
-          doc.setTextColor(75, 85, 99);
-          doc.text("Full Legal Text & Agreements:", margin, currentY);
-          currentY += 5;
-
-          doc.setFont("Helvetica", "normal");
-          doc.setFontSize(8.5);
-          doc.setTextColor(55, 65, 81);
-          const detailsLines = doc.splitTextToSize(template.consent_details, printableWidth);
-          detailsLines.forEach(line => {
-            checkPageBreak(4.5);
-            doc.text(line, margin, currentY);
-            currentY += 4.5;
-          });
-          currentY += 4;
-        }
-      });
-
-      // Signature section
-      checkPageBreak(45);
-      currentY += 5;
-      doc.setDrawColor(209, 213, 219);
-      doc.line(margin, currentY, margin + printableWidth, currentY);
       currentY += 8;
 
-      doc.setFont("Helvetica", "bold");
-      doc.setFontSize(10);
-      doc.setTextColor(31, 41, 55);
-      doc.text("AUTHORIZATION SIGNATURES", margin, currentY);
-      currentY += 10;
+      // 1. Participant Information
+      printText("1. Participant Information", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
 
-      // Draw signature lines
-      doc.setFont("Helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(107, 114, 128);
+      // Draw gray card
+      doc.setFillColor(243, 244, 246);
+      doc.rect(margin, currentY, printableWidth, 42, 'F');
 
-      doc.line(margin, currentY + 10, margin + 50, currentY + 10);
-      doc.text("Participant / Legal Guardian Signature", margin, currentY + 14);
-      doc.text(`Date: ${consentItem.consent_date || 'N/A'}`, margin, currentY + 19);
+      const isMale = (consentItem.gender || '').toLowerCase() === 'male';
+      const isFemale = (consentItem.gender || '').toLowerCase() === 'female';
+      const isOther = !isMale && !isFemale && consentItem.gender;
 
-      doc.line(margin + 65, currentY + 10, margin + 115, currentY + 10);
-      doc.text("Biobank Witness Signature", margin + 65, currentY + 14);
-      doc.text("Date: _________________", margin + 65, currentY + 19);
+      printText("Full Name: __________________________", margin + 6, currentY + 8, 9, "normal");
+      printText(`Patient ID: ${consentItem.subject_id || '__________________________'}`, margin + 95, currentY + 8, 9, "normal");
+      printText(`Age: ${consentItem.age || '_______'}`, margin + 6, currentY + 18, 9, "normal");
+      printText(`Gender: ${isMale ? '[X]' : '[ ]'} Male   ${isFemale ? '[X]' : '[ ]'} Female   ${isOther ? '[X]' : '[ ]'} Other`, margin + 95, currentY + 18, 9, "normal");
+      printText("Address: _____________________________", margin + 6, currentY + 28, 9, "normal");
+      printText("Contact Number: ______________________", margin + 6, currentY + 36, 9, "normal");
+      currentY += 48;
 
-      doc.line(margin + 130, currentY + 10, margin + 180, currentY + 10);
-      doc.text("Authorized Representative Approval", margin + 130, currentY + 14);
-      doc.text(`Date Verified: ${consentItem.submitted_date || 'N/A'}`, margin + 130, currentY + 19);
+      // 2. Study Information
+      printText("2. Study Information", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printText("I hereby confirm that I have been informed about the biobank study and understand that:", margin, currentY, 9, "normal");
+      currentY += 6;
+      printBullet("My biological samples (blood / tissue / saliva / DNA) may be collected");
+      printBullet("These samples will be stored in a biobank for future research purposes");
+      printBullet("My data may be used for medical research, disease studies, and scientific analysis");
+      currentY += 3;
+
+      // 3. Type of Samples Collected
+      printText("3. Type of Samples Collected", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+
+      const activeSpecType = (consentItem.specimen_type || '').toLowerCase();
+      const isChecked = (typeName) => activeSpecType.includes(typeName.toLowerCase());
+
+      const typesList = specimenTypes.length > 0 ? specimenTypes : [
+        { specimen_name: 'Blood' },
+        { specimen_name: 'Urine' },
+        { specimen_name: 'Saliva' },
+        { specimen_name: 'Stool' },
+        { specimen_name: 'Serum' },
+        { specimen_name: 'Plasma' },
+        { specimen_name: 'Buffy Coat' },
+        { specimen_name: 'PBMC' },
+        { specimen_name: 'Tissue' }
+      ];
+
+      const colWidth = 60;
+      let startX = margin;
+      let count = 0;
+
+      typesList.forEach((t) => {
+        const typeName = t.specimen_name;
+        const checked = isChecked(typeName) ? '[X]' : '[ ]';
+        doc.setFont("Helvetica", isChecked(typeName) ? "bold" : "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(31, 41, 55);
+        doc.text(`${checked} ${typeName}`, startX + (count % 3) * colWidth, currentY);
+        if (count % 3 === 2) {
+          currentY += 6;
+          checkPageBreak(6);
+        }
+        count++;
+      });
+      if (count % 3 !== 0) {
+        currentY += 6;
+      }
+      currentY += 4;
+
+      // 4. Purpose of Use
+      checkPageBreak(25);
+      printText("4. Purpose of Use", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("Disease research");
+      printBullet("Genetic studies");
+      printBullet("Drug development");
+      printBullet("Future unspecified medical research (if applicable)");
+      currentY += 3;
+
+      // 5. Privacy & Confidentiality
+      checkPageBreak(25);
+      printText("5. Privacy & Confidentiality", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("My personal identity will be kept confidential");
+      printBullet("Data will be coded/anonymized before use");
+      printBullet("Only authorized researchers will access the data");
+      currentY += 3;
+
+      // 6. Risks & Benefits
+      checkPageBreak(25);
+      printText("6. Risks & Benefits", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("I understand there may be minimal physical risk during sample collection");
+      printBullet("No direct medical benefit is guaranteed");
+      printBullet("Participation is voluntary");
+      currentY += 3;
+
+      // 7. Commercial Use
+      checkPageBreak(25);
+      printText("7. Commercial Use", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("I understand that my samples may be used for commercial research");
+      printBullet("I will not receive financial benefit from any discoveries or products");
+      currentY += 3;
+
+      // 8. Withdrawal Right
+      checkPageBreak(25);
+      printText("8. Withdrawal Right", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("I can withdraw my consent at any time without penalty");
+      printBullet("After withdrawal, no new use of my sample/data will occur");
+      currentY += 3;
+
+      // 9. Sample Storage
+      checkPageBreak(25);
+      printText("9. Sample Storage", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printBullet("Samples may be stored for: 25 years");
+      printBullet("After completion, samples may be destroyed or anonymized further");
+      currentY += 3;
+
+      // 10. Consent Declaration
+      checkPageBreak(25);
+      printText("10. Consent Declaration", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printText("I confirm that:", margin, currentY, 9, "normal");
+      currentY += 5;
+      printBullet("I have read and understood all the information above");
+      printBullet("I voluntarily agree to participate in this biobank study");
+      currentY += 2;
+
+      const hasAgreed = ['Verified', 'Submitted'].includes(consentItem.consent_status);
+      printText(`${hasAgreed ? '[X]' : '[ ]'} I Agree      ${!hasAgreed && consentItem.consent_status === 'Rejected' ? '[X]' : '[ ]'} I Do Not Agree`, margin, currentY, 9.5, "bold", [31, 41, 55]);
+      currentY += 8;
+
+      // 11. Signature
+      checkPageBreak(40);
+      printText("11. Signature", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 8;
+
+      doc.setDrawColor(209, 213, 219);
+      doc.line(margin, currentY + 8, margin + 50, currentY + 8);
+      printText("Participant Signature", margin, currentY + 12, 8.5, "normal", [107, 114, 128]);
+      printText(`Date: ${consentItem.consent_date || '__________'}`, margin, currentY + 17, 8.5, "normal", [107, 114, 128]);
+
+      doc.line(margin + 65, currentY + 8, margin + 115, currentY + 8);
+      printText("Witness Name & Signature", margin + 65, currentY + 12, 8.5, "normal", [107, 114, 128]);
+      printText("Date: __________", margin + 65, currentY + 17, 8.5, "normal", [107, 114, 128]);
+
+      doc.line(margin + 130, currentY + 8, margin + 180, currentY + 8);
+      printText("Investigator Name & Signature", margin + 130, currentY + 12, 8.5, "normal", [107, 114, 128]);
+      printText(`Date: ${consentItem.submitted_date || '__________'}`, margin + 130, currentY + 17, 8.5, "normal", [107, 114, 128]);
+      currentY += 26;
+
+      // 12. Contact Information
+      checkPageBreak(25);
+      printText("12. Contact Information", margin, currentY, 11, "bold", [31, 41, 55]);
+      currentY += 6;
+      printText("For any queries or withdrawal:", margin, currentY, 9, "normal");
+      currentY += 5;
+      printText("Institution: Aura Biobank Admin Center", margin, currentY, 9, "normal");
+      currentY += 5;
+      printText("Contact Number: +1 (555) 019-2838", margin, currentY, 9, "normal");
+      currentY += 5;
+      printText("Email: support@aurabiobank.org", margin, currentY, 9, "normal");
 
       // Save PDF
       doc.save(`Consent_${consentItem.subject_id}_${consentItem.consent_id || 'Document'}.pdf`);
