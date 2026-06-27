@@ -82,15 +82,6 @@ export async function registerSample(req, res, next) {
 
     const subject_id = req.body.subject_id || generateSubjectId();
     
-    // Generate sequential Sample ID: AURA-SMP-YYYY-XXXXXX
-    const currentYear = new Date().getFullYear();
-    const countCheck = await query(
-      "SELECT COUNT(*) as count FROM samples WHERE id LIKE $1", 
-      [`AURA-SMP-${currentYear}-%`]
-    );
-    const nextNum = parseInt(countCheck.rows[0].count, 10) + 1;
-    const sample_id = `AURA-SMP-${currentYear}-${String(nextNum).padStart(6, '0')}`;
-    
     const now = new Date();
     const localDate = now.toLocaleDateString('en-CA'); 
     const localTime = now.toTimeString().split(' ')[0]; 
@@ -123,19 +114,60 @@ export async function registerSample(req, res, next) {
     const finalContainerType = container_type || 'Tube';
     const finalContainerCount = container_count ? parseInt(container_count, 10) : 1;
 
-    // Insert sample details in a transaction-equivalent parameterized query
-    await query(
-      `INSERT INTO samples (
-        id, subject_id, gender, age, specimen_type, specimen_type_id, sample_volume, container_type, container_count,
-        collection_date, collection_time, collection_datetime, lab_id, collector_id, 
-        consent_id, consent_status, barcode_status, status, consent_version, consent_template_id, consent_template_ids
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, null, 'Pending', 'Unassigned', 'Collected', $15, $16, $17)`,
-      [
-        sample_id, subject_id, gender, numericAge, resolvedSpecimenName, specimen_type_id, numericVolume, finalContainerType, finalContainerCount,
-        localDate, localTime, collection_datetime, lab_id, collector_id,
-        consent_version, firstTemplateId, JSON.stringify(selectedIds)
-      ]
-    );
+    let sample_id;
+    let insertSuccess = false;
+    let attempts = 0;
+    const currentYear = new Date().getFullYear();
+
+    while (!insertSuccess && attempts < 10) {
+      attempts++;
+      
+      // Get the highest sample ID for the current year
+      const lastSample = await query(
+        "SELECT id FROM samples WHERE id LIKE $1 ORDER BY id DESC LIMIT 1",
+        [`AURA-SMP-${currentYear}-%`]
+      );
+      
+      let nextNum = 1;
+      if (lastSample.rows.length > 0) {
+        const lastId = lastSample.rows[0].id;
+        const parts = lastId.split('-');
+        const lastNum = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(lastNum)) {
+          nextNum = lastNum + 1;
+        }
+      }
+      
+      sample_id = `AURA-SMP-${currentYear}-${String(nextNum).padStart(6, '0')}`;
+      
+      try {
+        // Insert sample details in a transaction-equivalent parameterized query
+        await query(
+          `INSERT INTO samples (
+            id, subject_id, gender, age, specimen_type, specimen_type_id, sample_volume, container_type, container_count,
+            collection_date, collection_time, collection_datetime, lab_id, collector_id, 
+            consent_id, consent_status, barcode_status, status, consent_version, consent_template_id, consent_template_ids
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, null, 'Pending', 'Unassigned', 'Collected', $15, $16, $17)`,
+          [
+            sample_id, subject_id, gender, numericAge, resolvedSpecimenName, specimen_type_id, numericVolume, finalContainerType, finalContainerCount,
+            localDate, localTime, collection_datetime, lab_id, collector_id,
+            consent_version, firstTemplateId, JSON.stringify(selectedIds)
+          ]
+        );
+        insertSuccess = true;
+      } catch (err) {
+        // PostgreSQL unique_violation code is '23505'
+        if (err.code === '23505') {
+          console.warn(`Unique constraint violation for ID ${sample_id}, retrying next sequence number (attempt ${attempts})...`);
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!insertSuccess) {
+      throw new Error("Failed to generate a unique Sample ID after multiple attempts.");
+    }
 
     // Register Log in user_activity_logs
     await query(`
