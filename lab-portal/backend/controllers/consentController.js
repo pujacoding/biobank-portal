@@ -421,7 +421,7 @@ export async function verifyConsent(req, res, next) {
       SELECT s.*, st.specimen_code
       FROM samples s
       LEFT JOIN specimen_types st ON s.specimen_type_id = st.id
-      WHERE s.consent_id = $1 FOR UPDATE
+      WHERE s.consent_id = $1 FOR UPDATE OF s
     `, [consent_id]);
     const sample = sampleCheck.rows[0];
 
