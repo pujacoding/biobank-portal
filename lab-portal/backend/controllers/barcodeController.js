@@ -55,7 +55,7 @@ export async function getDashboard(req, res, next) {
     const totalPrintedParams = [];
     const totalReprintedParams = [];
 
-    if (req.user.labId) {
+    if (req.user.labId && req.user.role !== 'Super Admin') {
       totalGeneratedSql += " JOIN samples s ON b.sample_id = s.id WHERE b.status = 'Active' AND s.lab_id = $1";
       totalGeneratedParams.push(req.user.labId);
       
@@ -83,7 +83,7 @@ export async function getDashboard(req, res, next) {
         )
     `;
     const pendingParams = [];
-    if (req.user.labId) {
+    if (req.user.labId && req.user.role !== 'Super Admin') {
       pendingSql += " AND s.lab_id = $1";
       pendingParams.push(req.user.labId);
     }
@@ -121,7 +121,7 @@ export async function getHistory(req, res, next) {
       LEFT JOIN samples s ON b.sample_id = s.id
     `;
     const params = [];
-    if (req.user.labId) {
+    if (req.user.labId && req.user.role !== 'Super Admin') {
       sql += ` WHERE s.lab_id = $1`;
       params.push(req.user.labId);
     }
@@ -159,7 +159,7 @@ export async function generateBarcode(req, res, next) {
       WHERE s.id = $1
     `;
     const params = [sample_id];
-    if (req.user.labId) {
+    if (req.user.labId && req.user.role !== 'Super Admin') {
       sql += " AND s.lab_id = $2";
       params.push(req.user.labId);
     }
@@ -269,7 +269,7 @@ export async function printBarcode(req, res, next) {
       WHERE b.sample_id = $1 AND b.status = 'Active'
     `;
     const params = [sample_id];
-    if (req.user.labId) {
+    if (req.user.labId && req.user.role !== 'Super Admin') {
       sql += " AND s.lab_id = $2";
       params.push(req.user.labId);
     }
@@ -339,7 +339,7 @@ export async function reprintBarcode(req, res, next) {
       WHERE b.sample_id = $1 AND b.status = 'Active'
     `;
     const params = [sample_id];
-    if (req.user.labId) {
+    if (req.user.labId && req.user.role !== 'Super Admin') {
       sql += " AND s.lab_id = $2";
       params.push(req.user.labId);
     }
@@ -418,7 +418,7 @@ export async function regenerateBarcode(req, res, next) {
       WHERE b.sample_id = $1 AND b.status = 'Active'
     `;
     const params = [sample_id];
-    if (req.user.labId) {
+    if (req.user.labId && req.user.role !== 'Super Admin') {
       sql += " AND s.lab_id = $2";
       params.push(req.user.labId);
     }
@@ -547,7 +547,7 @@ export async function getActiveBarcode(req, res, next) {
       WHERE b.sample_id = $1 AND b.status = 'Active'
     `;
     const params = [sample_id];
-    if (req.user.labId) {
+    if (req.user.labId && req.user.role !== 'Super Admin') {
       sql += " AND s.lab_id = $2";
       params.push(req.user.labId);
     }

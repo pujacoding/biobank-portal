@@ -260,7 +260,7 @@ export async function getSamples(req, res, next) {
     if (userRoleId === 4) {
       sql += " WHERE s.lab_id = $1 AND s.collector_id = $2";
       params.push(req.user.labId, req.user.userId);
-    } else if (req.user.labId) {
+    } else if (req.user.labId && req.user.role !== 'Super Admin') {
       sql += " WHERE s.lab_id = $1";
       params.push(req.user.labId);
     }
