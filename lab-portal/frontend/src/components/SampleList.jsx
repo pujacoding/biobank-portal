@@ -328,6 +328,31 @@ export default function SampleList({
     }
   };
 
+  const handleDispose = async (sampleId) => {
+    if (!window.confirm(`Are you sure you want to mark specimen ${sampleId} as Disposed? This will remove its storage location assignment and log a compliance disposal audit.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${backendUrl}/api/samples/dispose/${sampleId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to dispose sample');
+      }
+
+      alert(`Sample ${sampleId} successfully marked as Disposed.`);
+      if (onRegistrationSuccess) onRegistrationSuccess();
+    } catch (err) {
+      alert("Disposal Error: " + err.message);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', textAlign: 'left' }}>
       {/* Back Button */}
@@ -447,6 +472,7 @@ export default function SampleList({
                     let statusBadge = 'badge-info';
                     if (sample.status === 'Consent Verified') statusBadge = 'badge-pending';
                     if (sample.status === 'Barcode Generated') statusBadge = 'badge-verified';
+                    if (sample.status === 'Disposed') statusBadge = 'badge-rejected';
 
                     const hasBarcode = !!sample.barcode_text;
                     const barcodeStatusText = hasBarcode ? 'Generated' : 'Unassigned';
@@ -565,6 +591,21 @@ export default function SampleList({
                                 }}
                               >
                                 Generate Barcode
+                              </button>
+                            )}
+
+                            {sample.status !== 'Disposed' && (
+                              <button
+                                onClick={() => handleDispose(sample.id)}
+                                className="btn btn-secondary"
+                                style={{ 
+                                  padding: '3px 8px', 
+                                  fontSize: '11px', 
+                                  color: 'var(--accent-error)', 
+                                  borderColor: 'var(--accent-error)',
+                                }}
+                              >
+                                Dispose
                               </button>
                             )}
                           </div>

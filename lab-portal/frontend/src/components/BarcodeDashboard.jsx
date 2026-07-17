@@ -445,26 +445,6 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
 
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Total Labels Printed
-          </span>
-          <span style={{ fontSize: '28px', fontWeight: '800', color: 'var(--accent-cyan)' }}>
-            {metrics.totalPrinted}
-          </span>
-          <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Sum of print/reprint counts</span>
-        </div>
-
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Total Reprinted Labels
-          </span>
-          <span style={{ fontSize: '28px', fontWeight: '800', color: 'var(--accent-purple)' }}>
-            {metrics.totalReprinted}
-          </span>
-          <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>Damaged/lost reprint audits</span>
-        </div>
-
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Pending Barcode Generation
           </span>
           <span style={{ fontSize: '28px', fontWeight: '800', color: 'var(--accent-warning)' }}>

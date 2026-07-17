@@ -98,6 +98,11 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
   const isSuperAdmin = currentUser.role === 'Super Admin';
   const isAdmin = currentUser.role === 'Lab Admin' || isSuperAdmin;
 
+  const hasPermission = (permissionName) => {
+    if (isSuperAdmin) return true;
+    return Array.isArray(currentUser.permissions) && currentUser.permissions.includes(permissionName);
+  };
+
   // Fetch initial selectors and users/labs directories
   const loadDirectoryData = async () => {
     setLoading(true);
@@ -932,7 +937,7 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
               + Create Consent Template
             </button>
           )}
-          {activeSubTab === 'users' && (
+          {activeSubTab === 'users' && hasPermission('Create User') && (
             <button className="btn btn-primary" onClick={handleOpenAddUser} style={{ padding: '8px 14px', fontSize: '13px' }}>
               + Create New User
             </button>
@@ -1125,20 +1130,15 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                                 >
                                   View details
                                 </button>
-                                <button 
-                                  className="btn btn-secondary" 
-                                  onClick={() => handleOpenEditUser(u)} 
-                                  style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--accent-cyan)', borderColor: 'var(--accent-cyan)' }}
-                                >
-                                  Edit
-                                </button>
-                                <button 
-                                  className="btn btn-secondary" 
-                                  onClick={() => handleViewHistory(u)} 
-                                  style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--accent-purple)', borderColor: 'var(--accent-purple)' }}
-                                >
-                                  History
-                                </button>
+                                {hasPermission('Edit User') && (
+                                  <button 
+                                    className="btn btn-secondary" 
+                                    onClick={() => handleOpenEditUser(u)} 
+                                    style={{ padding: '3px 8px', fontSize: '11px', color: 'var(--accent-cyan)', borderColor: 'var(--accent-cyan)' }}
+                                  >
+                                    Edit
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1662,16 +1662,18 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
 
             {/* Actions list */}
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '16px', flexWrap: 'wrap' }}>
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                onClick={() => { setShowDetailsModal(false); handleOpenEditUser(selectedUser); }}
-                style={{ padding: '8px 16px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)' }}
-              >
-                Edit User
-              </button>
+              {hasPermission('Edit User') && (
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => { setShowDetailsModal(false); handleOpenEditUser(selectedUser); }}
+                  style={{ padding: '8px 16px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)' }}
+                >
+                  Edit User
+                </button>
+              )}
 
-              {selectedUser.status !== 'Active' && (
+              {selectedUser.status !== 'Active' && hasPermission('Activate User') && (
                 <button 
                   type="button" 
                   className="btn btn-secondary" 
@@ -1682,7 +1684,7 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                 </button>
               )}
 
-              {selectedUser.status === 'Active' && (
+              {selectedUser.status === 'Active' && hasPermission('Deactivate User') && (
                 <button 
                   type="button" 
                   className="btn btn-secondary" 
@@ -1693,7 +1695,7 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                 </button>
               )}
 
-              {selectedUser.status !== 'Suspended' && (
+              {selectedUser.status !== 'Suspended' && hasPermission('Deactivate User') && (
                 <button 
                   type="button" 
                   className="btn btn-secondary" 
@@ -1704,97 +1706,18 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                 </button>
               )}
 
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                onClick={() => handleResetAccess(selectedUser)}
-                style={{ padding: '8px 16px' }}
-              >
-                Reset Access
-              </button>
-
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
-                onClick={() => { setShowDetailsModal(false); handleViewHistory(selectedUser); }}
-                style={{ padding: '8px 16px', borderColor: 'var(--accent-purple)', color: 'var(--accent-purple)' }}
-              >
-                View History
-              </button>
+              {hasPermission('Edit User') && (
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => handleResetAccess(selectedUser)}
+                  style={{ padding: '8px 16px' }}
+                >
+                  Reset Access
+                </button>
+              )}
 
               <button type="button" className="btn btn-secondary" style={{ marginLeft: 'auto', width: '100px' }} onClick={() => setShowDetailsModal(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. View History Modal */}
-      {showHistoryModal && selectedUser && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(8, 12, 24, 0.9)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          zIndex: 1000, padding: '20px'
-        }}>
-          <div className="glass-card" style={{ width: '100%', maxWidth: '680px', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-              <div>
-                <h3 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>
-                  Profile Lifecycle History Trail
-                </h3>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  Timeline logs for {selectedUser.full_name || selectedUser.name}
-                </span>
-              </div>
-              <button onClick={() => setShowHistoryModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '20px', cursor: 'pointer' }}>✕</button>
-            </div>
-
-            {/* Audit History Timeline */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {loadingHistory ? (
-                <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '13px' }}>Loading history trail logs...</p>
-              ) : userHistory.length === 0 ? (
-                <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontStyle: 'italic', fontSize: '13px' }}>No profile tracking events found.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto', paddingRight: '6px' }}>
-                  {userHistory.map(log => {
-                    const dt = new Date(log.timestamp).toLocaleString();
-                    let actionColor = 'var(--text-primary)';
-                    if (log.action_type === 'CREATE') actionColor = 'var(--accent-success)';
-                    if (log.action_type === 'UPDATE') actionColor = 'var(--accent-cyan)';
-                    if (log.action_type === 'DEACTIVATE' || log.action_type === 'SUSPEND') actionColor = 'var(--accent-error)';
-                    if (log.action_type === 'ACTIVATE') actionColor = 'var(--accent-success)';
-
-                    return (
-                      <div key={log.activity_id} style={{ border: '1px dashed var(--border-color)', borderRadius: '4px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ color: actionColor, fontWeight: '700', textTransform: 'uppercase' }}>
-                            {log.action_type}
-                          </span>
-                          <span style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>{dt}</span>
-                        </div>
-                        <div style={{ color: 'var(--text-secondary)' }}>
-                          {log.new_value ? (
-                            <span>{typeof log.new_value === 'string' ? log.new_value : 'Details updated.'}</span>
-                          ) : (
-                            <span>Action triggered</span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)', fontSize: '10px', marginTop: '4px', borderTop: '1px dotted var(--border-color)', paddingTop: '4px' }}>
-                          <span>By: {log.user_name} ({log.role})</span>
-                          <span>IP: {log.ip_address || 'System'}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-              <button type="button" className="btn btn-secondary" style={{ width: '120px', marginLeft: 'auto' }} onClick={() => setShowHistoryModal(false)}>Close</button>
             </div>
           </div>
         </div>

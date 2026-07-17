@@ -63,6 +63,9 @@ INSERT INTO permissions (permission_name, module_name) VALUES
 ('Activate User', 'User Management'),
 ('Deactivate User', 'User Management'),
 ('View Users', 'User Management'),
+-- Specimen Type Master
+('View Specimen Types', 'Specimen Type Master'),
+('Manage Specimen Types', 'Specimen Type Master'),
 -- Reports
 ('View Reports', 'Reports'),
 ('Export Reports', 'Reports'),
@@ -88,7 +91,8 @@ SELECT 2, permission_id FROM permissions WHERE permission_name IN (
   'Create Consent', 'Verify Consent', 'Reject Consent', 'View Consent',
   'Generate QR', 'Print QR', 'Reprint QR',
   'Create Shipment', 'Edit Shipment', 'Dispatch Shipment', 'Receive Shipment',
-  'View Reports', 'Export Reports', 'View Audit Logs'
+  'View Reports', 'Export Reports', 'View Audit Logs',
+  'View Specimen Types', 'Manage Specimen Types'
 ) ON CONFLICT DO NOTHING;
 
 -- Lab Technician (role_id = 3)

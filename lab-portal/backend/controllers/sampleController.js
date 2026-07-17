@@ -334,3 +334,118 @@ export async function getPublicSample(req, res, next) {
     next(error);
   }
 }
+
+/**
+ * Get aggregated dashboard statistics
+ */
+export async function getDashboardStats(req, res, next) {
+  try {
+    const labId = req.user.labId;
+    const isSuperAdmin = req.user.role === 'Super Admin';
+
+    let sampleFilter = "";
+    const params = [];
+    if (labId && !isSuperAdmin) {
+      sampleFilter = " WHERE lab_id = $1";
+      params.push(labId);
+    }
+
+    // 1. Total Samples
+    const totalSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${sampleFilter}`, params);
+    const totalSamples = parseInt(totalSamplesRes.rows[0].count, 10);
+
+    // 2. Today's Collection
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const todayFilter = sampleFilter ? `${sampleFilter} AND collection_date = $2` : " WHERE collection_date = $1";
+    const todayParams = [...params, todayStr];
+    const todayCollectionRes = await query(`SELECT COUNT(*) as count FROM samples${todayFilter}`, todayParams);
+    const todayCollection = parseInt(todayCollectionRes.rows[0].count, 10);
+
+    // 3. Stored Samples
+    const storedFilter = sampleFilter ? `${sampleFilter} AND (status = 'Stored' OR retrieval_status = 'Stored')` : " WHERE status = 'Stored' OR retrieval_status = 'Stored'";
+    const storedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${storedFilter}`, params);
+    const storedSamples = parseInt(storedSamplesRes.rows[0].count, 10);
+
+    // 4. Released Samples
+    const releasedFilter = sampleFilter ? `${sampleFilter} AND (status IN ('Released', 'Retrieved', 'Allocated') OR retrieval_status IN ('Released', 'Retrieved', 'Allocated'))` : " WHERE status IN ('Released', 'Retrieved', 'Allocated') OR retrieval_status IN ('Released', 'Retrieved', 'Allocated')";
+    const releasedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${releasedFilter}`, params);
+    const releasedSamples = parseInt(releasedSamplesRes.rows[0].count, 10);
+
+    // 5. Disposed Samples
+    const disposedFilter = sampleFilter ? `${sampleFilter} AND (status = 'Disposed' OR retrieval_status = 'Disposed')` : " WHERE status = 'Disposed' OR retrieval_status = 'Disposed'";
+    const disposedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${disposedFilter}`, params);
+    const disposedSamples = parseInt(disposedSamplesRes.rows[0].count, 10);
+
+    // 6. Available Storage (Total capacity of 500 minus currently stored)
+    const totalCapacity = 500;
+    const availableStorage = Math.max(0, totalCapacity - storedSamples);
+
+    // 7. Research Projects (Total studies)
+    const researchProjectsRes = await query("SELECT COUNT(*) as count FROM studies");
+    const researchProjects = parseInt(researchProjectsRes.rows[0].count, 10);
+
+    // 8. Temperature Alerts (Normally 0)
+    const tempAlerts = 0;
+
+    res.json({
+      success: true,
+      stats: {
+        totalSamples,
+        todayCollection,
+        storedSamples,
+        releasedSamples,
+        disposedSamples,
+        availableStorage,
+        researchProjects,
+        tempAlerts
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Mark a sample as Disposed
+ */
+export async function disposeSample(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    const sampleCheck = await query("SELECT lab_id, status FROM samples WHERE id = $1", [id]);
+    if (sampleCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Sample not found" });
+    }
+
+    const sample = sampleCheck.rows[0];
+    if (req.user.role !== 'Super Admin' && req.user.labId && sample.lab_id !== req.user.labId) {
+      return res.status(403).json({ error: "Access denied: Sample belongs to another laboratory context." });
+    }
+
+    // Update status to 'Disposed' and clear location coordinates
+    await query(
+      "UPDATE samples SET status = 'Disposed', retrieval_status = 'Disposed', location = NULL WHERE id = $1",
+      [id]
+    );
+
+    // Log the disposal event to compliance logs
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "";
+    await query(`
+      INSERT INTO user_activity_logs (user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address)
+      VALUES ($1, $2, $3, $4, 'Sample Management', 'Sample Disposal', 'Sample', $5, $6, 'Disposed', $7)
+    `, [
+      req.user.userId,
+      req.user.name || 'System',
+      req.user.role || 'Operator',
+      req.user.labName || 'Aura Biobank',
+      id,
+      sample.status,
+      clientIp
+    ]);
+
+    res.json({ success: true, message: `Sample ${id} has been successfully disposed.` });
+  } catch (error) {
+    next(error);
+  }
+}
+

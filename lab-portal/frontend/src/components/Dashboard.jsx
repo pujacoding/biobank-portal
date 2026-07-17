@@ -1,20 +1,47 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
-export default function Dashboard({ samples, globalTotal, setActiveTab, user }) {
-  // Compute metrics
+export default function Dashboard({ samples, globalTotal, setActiveTab, user, backendUrl, token }) {
+  const [stats, setStats] = useState({
+    totalSamples: 0,
+    todayCollection: 0,
+    storedSamples: 0,
+    releasedSamples: 0,
+    disposedSamples: 0,
+    availableStorage: 500,
+    researchProjects: 0,
+    tempAlerts: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  // Compute local today string for display fallback
   const todayStr = new Date().toLocaleDateString('en-CA');
-  
-  const totalSamplesToday = samples.filter(s => s.collection_date === todayStr).length;
-  
-  // Pending Barcode: Consent is Verified, but barcode not generated yet (status === 'Consent Verified')
-  const pendingBarcode = samples.filter(s => s.status === 'Consent Verified').length;
-  
-  // Pending Shipments: Barcode is generated (ready for shipping), but shipment not finalized (status === 'Barcode Generated')
-  const pendingShipments = samples.filter(s => s.status === 'Barcode Generated').length;
-  
-  const totalSamples = globalTotal || samples.length;
 
-  // Last 5 samples
+  useEffect(() => {
+    const fetchDashboardStats = async () => {
+      if (!token || !backendUrl) return;
+      try {
+        const activeLab = localStorage.getItem('aura_active_lab_id');
+        const response = await fetch(`${backendUrl}/api/samples/dashboard-stats`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            ...(activeLab ? { 'x-active-lab-id': activeLab } : {})
+          }
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+          setStats(data.stats);
+        }
+      } catch (err) {
+        console.error("Error fetching dashboard statistics:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardStats();
+  }, [backendUrl, token, samples]);
+
+  // Last 5 samples for the recent registrations table
   const recentSamples = samples.slice(0, 5);
 
   return (
@@ -24,102 +51,214 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user }) 
           Welcome back, <span className="title-gradient">{user.name}</span>
         </h1>
         <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-          Ingestion overview for <strong style={{ color: 'var(--text-primary)' }}>{user.lab_name}</strong> &bull; {user.lab_location}
+          Ingestion overview for <strong style={{ color: 'var(--text-primary)' }}>{user.lab_name}</strong> &bull; {user.lab_location || 'Central Facility'}
         </p>
       </div>
 
-      {/* Telemetry Metrics Grid */}
-      <div className="dashboard-grid">
-        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+      {/* Telemetry Metrics Grid (8 Cards) */}
+      <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+        
+        {/* 1. Total Samples */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '16px' }}>
           <div style={{
             background: 'rgba(6, 182, 212, 0.08)',
             border: '1px solid rgba(6, 182, 212, 0.2)',
             borderRadius: 'var(--border-radius-md)',
-            width: '48px',
-            height: '48px',
+            width: '44px',
+            height: '44px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'var(--accent-cyan)'
           }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '22px', height: '22px' }}>
-              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
           </div>
           <div style={{ textAlign: 'left' }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Collected Today</span>
-            <h3 style={{ fontSize: '24px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{totalSamplesToday}</h3>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Samples</span>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.totalSamples}</h3>
           </div>
         </div>
 
-        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-          <div style={{
-            background: 'rgba(245, 158, 11, 0.08)',
-            border: '1px solid rgba(245, 158, 11, 0.2)',
-            borderRadius: 'var(--border-radius-md)',
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--accent-warning)'
-          }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '22px', height: '22px' }}>
-              <path d="M4 7V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v3M4 14h16M4 17h16M20 7V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v3M4 7h16v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7z"/>
-            </svg>
-          </div>
-          <div style={{ textAlign: 'left' }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pending Barcode</span>
-            <h3 style={{ fontSize: '24px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{pendingBarcode}</h3>
-          </div>
-        </div>
-
-        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-          <div style={{
-            background: 'rgba(168, 85, 247, 0.08)',
-            border: '1px solid rgba(168, 85, 247, 0.2)',
-            borderRadius: 'var(--border-radius-md)',
-            width: '48px',
-            height: '48px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--accent-purple)'
-          }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '22px', height: '22px' }}>
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-              <line x1="8" y1="21" x2="16" y2="21"/>
-              <line x1="12" y1="17" x2="12" y2="21"/>
-            </svg>
-          </div>
-          <div style={{ textAlign: 'left' }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pending Shipments</span>
-            <h3 style={{ fontSize: '24px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{pendingShipments}</h3>
-          </div>
-        </div>
-
-        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+        {/* 2. Today's Collection */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '16px' }}>
           <div style={{
             background: 'rgba(16, 185, 129, 0.08)',
             border: '1px solid rgba(16, 185, 129, 0.2)',
             borderRadius: 'var(--border-radius-md)',
-            width: '48px',
-            height: '48px',
+            width: '44px',
+            height: '44px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'var(--accent-success)'
           }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '22px', height: '22px' }}>
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-              <polyline points="22 4 12 14.01 9 11.01"/>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
             </svg>
           </div>
           <div style={{ textAlign: 'left' }}>
-            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Ingested</span>
-            <h3 style={{ fontSize: '24px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{totalSamples}</h3>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Today's Collection</span>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.todayCollection}</h3>
           </div>
         </div>
+
+        {/* 3. Stored Samples */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '16px' }}>
+          <div style={{
+            background: 'rgba(20, 184, 166, 0.08)',
+            border: '1px solid rgba(20, 184, 166, 0.2)',
+            borderRadius: 'var(--border-radius-md)',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#14b8a6'
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stored Samples</span>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.storedSamples}</h3>
+          </div>
+        </div>
+
+        {/* 4. Released Samples */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '16px' }}>
+          <div style={{
+            background: 'rgba(168, 85, 247, 0.08)',
+            border: '1px solid rgba(168, 85, 247, 0.2)',
+            borderRadius: 'var(--border-radius-md)',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--accent-purple)'
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
+              <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+              <polyline points="16 6 12 2 8 6"/>
+              <line x1="12" y1="2" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Released Samples</span>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.releasedSamples}</h3>
+          </div>
+        </div>
+
+        {/* 5. Disposed Samples */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '16px' }}>
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: 'var(--border-radius-md)',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--accent-error)'
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              <line x1="10" y1="11" x2="10" y2="17"/>
+              <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Disposed Samples</span>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.disposedSamples}</h3>
+          </div>
+        </div>
+
+        {/* 6. Available Storage */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '16px' }}>
+          <div style={{
+            background: 'rgba(59, 130, 246, 0.08)',
+            border: '1px solid rgba(59, 130, 246, 0.2)',
+            borderRadius: 'var(--border-radius-md)',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#3b82f6'
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
+              <ellipse cx="12" cy="5" rx="9" ry="3"/>
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+              <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
+            </svg>
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available Storage</span>
+            <h3 style={{ fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.availableStorage} <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>/ 500</span></h3>
+          </div>
+        </div>
+
+        {/* 7. Research Projects */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '16px' }}>
+          <div style={{
+            background: 'rgba(244, 63, 94, 0.08)',
+            border: '1px solid rgba(244, 63, 94, 0.2)',
+            borderRadius: 'var(--border-radius-md)',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#f43f5e'
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
+              <path d="M2 22h20"/>
+              <path d="M7 22V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v17"/>
+              <line x1="12" y1="11" x2="12" y2="11.01"/>
+              <line x1="12" y1="16" x2="12" y2="16.01"/>
+            </svg>
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Research Projects</span>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.researchProjects}</h3>
+          </div>
+        </div>
+
+        {/* 8. Temperature Alerts */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '16px' }}>
+          <div style={{
+            background: stats.tempAlerts > 0 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+            border: stats.tempAlerts > 0 ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(16, 185, 129, 0.2)',
+            borderRadius: 'var(--border-radius-md)',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: stats.tempAlerts > 0 ? 'var(--accent-error)' : 'var(--accent-success)'
+          }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '20px', height: '20px' }}>
+              <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+            </svg>
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Temp Alerts</span>
+            <h3 style={{ fontSize: '16px', fontWeight: '700', color: stats.tempAlerts > 0 ? 'var(--accent-error)' : 'var(--accent-success)', marginTop: '4px' }}>
+              {stats.tempAlerts > 0 ? `${stats.tempAlerts} Active` : '0 Alerts (OK)'}
+            </h3>
+          </div>
+        </div>
+
       </div>
 
       {/* Quick Action Panel */}
@@ -197,10 +336,12 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user }) 
                   let badgeClass = 'badge-pending';
                   if (sample.consent_status === 'Verified') badgeClass = 'badge-verified';
                   if (sample.consent_status === 'Rejected') badgeClass = 'badge-rejected';
+                  if (sample.consent_status === 'Withdrawn') badgeClass = 'badge-rejected';
 
                   let statusBadge = 'badge-info';
                   if (sample.status === 'Consent Verified') statusBadge = 'badge-pending';
                   if (sample.status === 'Barcode Generated') statusBadge = 'badge-verified';
+                  if (sample.status === 'Disposed') statusBadge = 'badge-rejected';
 
                   return (
                     <tr key={sample.id}>
@@ -234,3 +375,4 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user }) 
     </div>
   );
 }
+

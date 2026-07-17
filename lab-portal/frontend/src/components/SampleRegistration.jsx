@@ -599,7 +599,46 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
 
       <form key={formKey} onSubmit={(e) => e.preventDefault()} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         
-        {/* Section A: Subject Information */}
+        {!activeLabId && (
+          <div style={{
+            backgroundColor: 'rgba(6, 182, 212, 0.08)',
+            border: '1px solid rgba(6, 182, 212, 0.3)',
+            borderRadius: 'var(--border-radius-sm)',
+            padding: '16px',
+            color: 'var(--text-primary)',
+            fontSize: '13px',
+            fontWeight: '600',
+            textAlign: 'center',
+            marginBottom: '10px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 4px 12px rgba(6, 182, 212, 0.1)'
+          }}>
+            <span style={{ fontSize: '15px', color: 'var(--accent-cyan)' }}>⚠️ Lab Location Selection Required</span>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 'normal' }}>
+              Please select an active laboratory from the <strong>Active Lab</strong> selector in the top-right header to enable sample registration.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const selector = document.getElementById('active-lab-selector');
+                if (selector) {
+                  selector.focus();
+                  selector.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }}
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '12px', marginTop: '4px' }}
+            >
+              Focus Lab Selector 🔍
+            </button>
+          </div>
+        )}
+
+        <fieldset disabled={!activeLabId} style={{ border: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Section A: Subject Information */}
         <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Section A: Subject Information
@@ -1207,6 +1246,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
             Save Sample
           </button>
         </div>
+        </fieldset>
       </form>
 
       {/* View Full Consent Modal */}

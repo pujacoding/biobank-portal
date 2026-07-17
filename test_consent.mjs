@@ -1,10 +1,65 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
+import path from 'path';
+import pg from 'pg';
+const { Client } = pg;
 
 let globalPage = null;
 
+async function resetDatabase() {
+  const envPath = path.resolve('lab-portal/backend/.env');
+  if (!fs.existsSync(envPath)) {
+    console.log("No backend .env file found at " + envPath + ", skipping DB reset.");
+    return;
+  }
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  const dbUrlLine = envContent.split('\n').find(line => line.startsWith('DATABASE_URL='));
+  if (!dbUrlLine) {
+    console.log("No DATABASE_URL found in backend .env, skipping DB reset.");
+    return;
+  }
+  const connectionString = dbUrlLine.split('DATABASE_URL=')[1].trim();
+  console.log("Connecting to database to reset E2E test records...");
+  try {
+    const client = new Client({ connectionString });
+    await client.connect();
+
+    // Delete dependent rows
+    await client.query("DELETE FROM barcode_history WHERE sample_id = 'AURA-SMP-2026-000013'");
+    await client.query("DELETE FROM barcode_audit WHERE sample_id = 'AURA-SMP-2026-000013'");
+    await client.query("DELETE FROM barcodes WHERE sample_id = 'AURA-SMP-2026-000013'");
+
+    // Reset the consent record
+    await client.query(`
+      UPDATE consent 
+      SET consent_version = 'v1.0', 
+          verification_status = 'Draft', 
+          consent_type = 'General Biobank Consent',
+          document_url = '/uploads/consent/cns-draft-001_consent.pdf'
+      WHERE id = 'CNS-DRAFT-001'
+    `);
+    
+    // Reset the sample record
+    await client.query(`
+      UPDATE samples 
+      SET consent_id = 'CNS-DRAFT-001', 
+          consent_status = 'Draft', 
+          consent_version = 'v1.0', 
+          status = 'Collected',
+          barcode_status = 'Unassigned'
+      WHERE id = 'AURA-SMP-2026-000013'
+    `);
+
+    await client.end();
+    console.log("Database reset complete.");
+  } catch (err) {
+    console.error("Database reset failed:", err);
+  }
+}
+
 async function runTest() {
   console.log("Starting E2E validation script...");
+  await resetDatabase();
   const browser = await chromium.launch({ headless: true });
   
   // Step 1: Login as Collection Staff

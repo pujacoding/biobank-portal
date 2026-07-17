@@ -14,6 +14,7 @@ import InventoryStorage from './components/InventoryStorage';
 import ShipmentManagement from './components/ShipmentManagement';
 import TraceSpecimen from './components/TraceSpecimen';
 import SpecimenTypeMaster from './components/SpecimenTypeMaster';
+import Reports from './components/Reports';
 
 const BACKEND_URL = API_BASE_URL;
 
@@ -45,6 +46,12 @@ export default function App() {
     }
     return localStorage.getItem('aura_active_lab_name') || '';
   });
+
+  const hasPermission = (permissionName) => {
+    if (!user) return false;
+    if (user.role === 'Super Admin') return true;
+    return Array.isArray(user.permissions) && user.permissions.includes(permissionName);
+  };
 
   const fetchAccessibleLabs = async (authToken = token) => {
     if (!authToken) return;
@@ -503,6 +510,37 @@ export default function App() {
                 </button>
               </li>
 
+              <li>
+                <button
+                  onClick={() => setActiveTab('reports')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: activeTab === 'reports' ? 'var(--border-color)' : 'transparent',
+                    border: 'none',
+                    color: activeTab === 'reports' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontWeight: activeTab === 'reports' ? '700' : '500',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  title={sidebarCollapsed ? "Biobank Reports" : undefined}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                  </svg>
+                  {!sidebarCollapsed && "Biobank Reports"}
+                </button>
+              </li>
+
               {(user.role === 'Lab Admin' || user.role === 'Super Admin') && (
                 <li>
                   <button
@@ -536,7 +574,7 @@ export default function App() {
               )}
 
               {/* Protected Administration Link (Admin Only) */}
-              {(user.role === 'Lab Admin' || user.role === 'Super Admin') && (
+              {(user.role === 'Lab Admin' || user.role === 'Super Admin' || hasPermission('View Users') || hasPermission('View Specimen Types') || hasPermission('View Audit Logs')) && (
                 <>
                   {!sidebarCollapsed && (
                     <li style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 8px 6px' }}>
@@ -544,94 +582,101 @@ export default function App() {
                     </li>
                   )}
                   
-                  <li>
-                    <button
-                      onClick={() => setActiveTab('users')}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: 'var(--border-radius-sm)',
-                        background: activeTab === 'users' ? 'var(--border-color)' : 'transparent',
-                        border: 'none',
-                        color: activeTab === 'users' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'users' ? '700' : '500',
-                        fontSize: '13px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                        gap: '10px',
-                        cursor: 'pointer',
-                        transition: 'var(--transition-smooth)'
-                      }}
-                      title={sidebarCollapsed ? "User Management" : undefined}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                        <circle cx="9" cy="7" r="4"/>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                      </svg>
-                      {!sidebarCollapsed && "User Management"}
-                    </button>
-                  </li>
+                  {(user.role === 'Lab Admin' || user.role === 'Super Admin' || hasPermission('View Users')) && (
+                    <li>
+                      <button
+                        onClick={() => setActiveTab('users')}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'users' ? 'var(--border-color)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'users' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'users' ? '700' : '500',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                          gap: '10px',
+                          cursor: 'pointer',
+                          transition: 'var(--transition-smooth)'
+                        }}
+                        title={sidebarCollapsed ? "User Management" : undefined}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                          <circle cx="9" cy="7" r="4"/>
+                          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        {!sidebarCollapsed && "User Management"}
+                      </button>
+                    </li>
+                  )}
 
-                  <li>
-                    <button
-                      onClick={() => setActiveTab('specimen-types')}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: 'var(--border-radius-sm)',
-                        background: activeTab === 'specimen-types' ? 'var(--border-color)' : 'transparent',
-                        border: 'none',
-                        color: activeTab === 'specimen-types' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'specimen-types' ? '700' : '500',
-                        fontSize: '13px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                        gap: '10px',
-                        cursor: 'pointer',
-                        transition: 'var(--transition-smooth)'
-                      }}
-                      title={sidebarCollapsed ? "Specimen Type Master" : undefined}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                      </svg>
-                      {!sidebarCollapsed && "Specimen Type Master"}
-                    </button>
-                  </li>
+                  {(user.role === 'Lab Admin' || user.role === 'Super Admin' || hasPermission('View Specimen Types')) && (
+                    <li>
+                      <button
+                        onClick={() => setActiveTab('specimen-types')}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'specimen-types' ? 'var(--border-color)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'specimen-types' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'specimen-types' ? '700' : '500',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                          gap: '10px',
+                          cursor: 'pointer',
+                          transition: 'var(--transition-smooth)'
+                        }}
+                        title={sidebarCollapsed ? "Specimen Type Master" : undefined}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                        </svg>
+                        {!sidebarCollapsed && "Specimen Type Master"}
+                      </button>
+                    </li>
+                  )}
 
-                  <li>
-                    <button
-                      onClick={() => setActiveTab('audit')}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: 'var(--border-radius-sm)',
-                        background: activeTab === 'audit' ? 'var(--border-color)' : 'transparent',
-                        border: 'none',
-                        color: activeTab === 'audit' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        fontWeight: activeTab === 'audit' ? '700' : '500',
-                        fontSize: '13px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                        gap: '10px',
-                        cursor: 'pointer',
-                        transition: 'var(--transition-smooth)'
-                      }}
-                      title={sidebarCollapsed ? "Audit Trail" : undefined}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      {!sidebarCollapsed && "Audit Trail"}
-                    </button>
-                  </li>
+                  {(user.role === 'Lab Admin' || user.role === 'Super Admin' || hasPermission('View Audit Logs')) && (
+                    <li>
+                      <button
+                        onClick={() => setActiveTab('audit')}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'audit' ? 'var(--border-color)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'audit' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'audit' ? '700' : '500',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                          gap: '10px',
+                          cursor: 'pointer',
+                          transition: 'var(--transition-smooth)'
+                        }}
+                        title={sidebarCollapsed ? "Audit Trail" : undefined}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        {!sidebarCollapsed && "Audit Trail"}
+                      </button>
+                    </li>
+                  )}
                 </>
               )}
+
             </ul>
           </nav>
         </div>
@@ -730,6 +775,7 @@ export default function App() {
               <select
                 id="active-lab-selector"
                 value={activeLabId}
+                className={(!activeLabId && activeTab === 'register') ? 'lab-selector-glow' : ''}
                 onChange={(e) => {
                   const id = e.target.value;
                   const selectedLab = accessibleLabs.find(l => String(l.id) === String(id));
@@ -742,6 +788,8 @@ export default function App() {
                   } else {
                     localStorage.removeItem('aura_active_lab_id');
                     localStorage.removeItem('aura_active_lab_name');
+                    setActiveLabId('');
+                    setActiveLabName('');
                   }
                 }}
                 style={{
@@ -818,6 +866,18 @@ export default function App() {
               user={user} 
               activeLabId={activeLabId}
               activeLabName={activeLabName}
+              backendUrl={BACKEND_URL}
+              token={token}
+            />
+          )}
+
+          {activeTab === 'reports' && (
+            <Reports 
+              samples={samples} 
+              backendUrl={BACKEND_URL} 
+              token={token} 
+              user={user} 
+              setActiveTab={setActiveTab}
             />
           )}
 

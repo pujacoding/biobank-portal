@@ -2316,3 +2316,20 @@ body.light-theme .preset-btn:hover {
   background: rgba(0, 0, 0, 0.03) !important;
 }
 
+/* Glowing/pulsing warning for active lab selector when required */
+.lab-selector-glow {
+  animation: pulse-glow-border 1.5s infinite ease-in-out;
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.6);
+  border: 1.5px solid var(--accent-cyan) !important;
+}
+
+@keyframes pulse-glow-border {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(6, 182, 212, 0.3);
+    border-color: var(--border-color);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(6, 182, 212, 0.8);
+    border-color: var(--accent-cyan);
+  }
+}
