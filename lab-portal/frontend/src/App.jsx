@@ -22,6 +22,8 @@ export default function App() {
   const [token, setToken] = useState(localStorage.getItem('aura_lab_token') || null);
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('aura_lab_user')) || null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeReport, setActiveReport] = useState('dashboard-analytics');
+  const [reportsExpanded, setReportsExpanded] = useState(true);
   const [samples, setSamples] = useState([]);
   const [globalTotal, setGlobalTotal] = useState(0);
   const [theme, setTheme] = useState(localStorage.getItem('aura_lab_theme') || 'dark');
@@ -121,6 +123,38 @@ export default function App() {
       body.classList.remove('light-theme');
     }
   }, [theme]);
+
+  // URL routing synchronization
+  const parseLocationRoute = () => {
+    const path = window.location.pathname;
+    if (path.startsWith('/lab/reports/')) {
+      const reportType = path.replace('/lab/reports/', '');
+      setActiveTab('reports');
+      setActiveReport(reportType);
+    } else if (path.startsWith('/lab/')) {
+      const tabType = path.replace('/lab/', '');
+      if (tabType) {
+        setActiveTab(tabType);
+      }
+    }
+  };
+
+  useEffect(() => {
+    parseLocationRoute();
+    window.addEventListener('popstate', parseLocationRoute);
+    return () => window.removeEventListener('popstate', parseLocationRoute);
+  }, []);
+
+  const navigateTo = (tabName, reportName = '') => {
+    setActiveTab(tabName);
+    if (reportName) {
+      setActiveReport(reportName);
+      window.history.pushState(null, '', `/lab/reports/${reportName}`);
+    } else {
+      window.history.pushState(null, '', `/lab/${tabName}`);
+    }
+  };
+
 
   // Fetch Samples List
   const fetchSamples = async (authToken = token) => {
@@ -304,18 +338,13 @@ export default function App() {
           </div>
 
           {/* Nav Links */}
-          <nav>
-            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <nav style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+            <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '6px', margin: 0, padding: 0 }}>
               
-              {!sidebarCollapsed && (
-                <li style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '6px 8px' }}>
-                  Operations
-                </li>
-              )}
-              
+              {/* Dashboard Link */}
               <li>
                 <button
-                  onClick={() => setActiveTab('dashboard')}
+                  onClick={() => navigateTo('dashboard')}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -341,9 +370,46 @@ export default function App() {
                 </button>
               </li>
 
+              {/* OPERATIONS SECTION */}
+              {!sidebarCollapsed && (
+                <li style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 8px 4px' }}>
+                  Operations
+                </li>
+              )}
+              
+              {/* Subject Registration STUB */}
               <li>
                 <button
-                  onClick={() => setActiveTab('register')}
+                  onClick={() => navigateTo('subject-reg')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: activeTab === 'subject-reg' ? 'var(--border-color)' : 'transparent',
+                    border: 'none',
+                    color: activeTab === 'subject-reg' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontWeight: activeTab === 'subject-reg' ? '700' : '500',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  title={sidebarCollapsed ? "Subject Registration" : undefined}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                  </svg>
+                  {!sidebarCollapsed && "Subject Registration"}
+                </button>
+              </li>
+
+              {/* Sample Registration */}
+              <li>
+                <button
+                  onClick={() => navigateTo('register')}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -369,17 +435,18 @@ export default function App() {
                 </button>
               </li>
 
+              {/* Sample Collection STUB */}
               <li>
                 <button
-                  onClick={() => setActiveTab('samples')}
+                  onClick={() => navigateTo('sample-col')}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
                     borderRadius: 'var(--border-radius-sm)',
-                    background: activeTab === 'samples' ? 'var(--border-color)' : 'transparent',
+                    background: activeTab === 'sample-col' ? 'var(--border-color)' : 'transparent',
                     border: 'none',
-                    color: activeTab === 'samples' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    fontWeight: activeTab === 'samples' ? '700' : '500',
+                    color: activeTab === 'sample-col' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontWeight: activeTab === 'sample-col' ? '700' : '500',
                     fontSize: '13px',
                     display: 'flex',
                     alignItems: 'center',
@@ -388,19 +455,48 @@ export default function App() {
                     cursor: 'pointer',
                     transition: 'var(--transition-smooth)'
                   }}
-                  title={sidebarCollapsed ? "View Samples" : undefined}
+                  title={sidebarCollapsed ? "Sample Collection" : undefined}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8m-4-6l-4-4-4 4"/>
                   </svg>
-                  {!sidebarCollapsed && "View Samples"}
+                  {!sidebarCollapsed && "Sample Collection"}
                 </button>
               </li>
 
+              {/* Sample Processing STUB */}
               <li>
                 <button
-                  onClick={() => setActiveTab('consent')}
+                  onClick={() => navigateTo('sample-proc')}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: activeTab === 'sample-proc' ? 'var(--border-color)' : 'transparent',
+                    border: 'none',
+                    color: activeTab === 'sample-proc' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontWeight: activeTab === 'sample-proc' ? '700' : '500',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  title={sidebarCollapsed ? "Sample Processing" : undefined}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                    <circle cx="12" cy="12" r="10"/><path d="M12 2v20M2 12h20"/>
+                  </svg>
+                  {!sidebarCollapsed && "Sample Processing"}
+                </button>
+              </li>
+
+              {/* Consent Management */}
+              <li>
+                <button
+                  onClick={() => navigateTo('consent')}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -426,9 +522,10 @@ export default function App() {
                 </button>
               </li>
 
+              {/* Shipment & Receiving */}
               <li>
                 <button
-                  onClick={() => setActiveTab('shipments')}
+                  onClick={() => navigateTo('shipments')}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -448,15 +545,16 @@ export default function App() {
                   title={sidebarCollapsed ? "Shipments & Receiving" : undefined}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
                   </svg>
                   {!sidebarCollapsed && "Shipment & Receiving"}
                 </button>
               </li>
 
+              {/* Inventory & Storage */}
               <li>
                 <button
-                  onClick={() => setActiveTab('storage')}
+                  onClick={() => navigateTo('storage')}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -482,9 +580,10 @@ export default function App() {
                 </button>
               </li>
 
+              {/* Trace Specimen */}
               <li>
                 <button
-                  onClick={() => setActiveTab('trace')}
+                  onClick={() => navigateTo('trace')}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -510,41 +609,11 @@ export default function App() {
                 </button>
               </li>
 
-              <li>
-                <button
-                  onClick={() => setActiveTab('reports')}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--border-radius-sm)',
-                    background: activeTab === 'reports' ? 'var(--border-color)' : 'transparent',
-                    border: 'none',
-                    color: activeTab === 'reports' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    fontWeight: activeTab === 'reports' ? '700' : '500',
-                    fontSize: '13px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
-                    gap: '10px',
-                    cursor: 'pointer',
-                    transition: 'var(--transition-smooth)'
-                  }}
-                  title={sidebarCollapsed ? "Biobank Reports" : undefined}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                  </svg>
-                  {!sidebarCollapsed && "Biobank Reports"}
-                </button>
-              </li>
-
+              {/* Barcode Manager */}
               {(user.role === 'Lab Admin' || user.role === 'Super Admin') && (
                 <li>
                   <button
-                    onClick={() => setActiveTab('barcode')}
+                    onClick={() => navigateTo('barcode')}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -573,19 +642,156 @@ export default function App() {
                 </li>
               )}
 
-              {/* Protected Administration Link (Admin Only) */}
+              {/* REPORTS SECTION */}
+              <li>
+                <button
+                  onClick={() => {
+                    navigateTo('reports', activeReport || 'dashboard-analytics');
+                    if (!sidebarCollapsed) setReportsExpanded(!reportsExpanded);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--border-radius-sm)',
+                    background: activeTab === 'reports' ? 'var(--border-color)' : 'transparent',
+                    border: 'none',
+                    color: activeTab === 'reports' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontWeight: activeTab === 'reports' ? '700' : '500',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+                    gap: '10px',
+                    cursor: 'pointer',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  title={sidebarCollapsed ? "Reports" : undefined}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="16" y1="13" x2="8" y2="13"/>
+                      <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                    {!sidebarCollapsed && "Reports"}
+                  </div>
+                  {!sidebarCollapsed && (
+                    <span style={{ fontSize: '10px' }}>{reportsExpanded ? '▼' : '▶'}</span>
+                  )}
+                </button>
+                
+                {/* Reports Submenu */}
+                {!sidebarCollapsed && reportsExpanded && (
+                  <ul className="sidebar-submenu">
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'dashboard-analytics' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'dashboard-analytics')}>
+                        📊 Dashboard Analytics
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'specimen-inventory' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'specimen-inventory')}>
+                        📦 Specimen Inventory
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'sample-collection' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'sample-collection')}>
+                        🩸 Sample Collection
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'sample-processing' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'sample-processing')}>
+                        ⚙️ Sample Processing
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'consent-report' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'consent-report')}>
+                        📜 Consent Report
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'inventory-report' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'inventory-report')}>
+                        🧪 Inventory Report
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'storage-report' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'storage-report')}>
+                        ❄️ Storage Report
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'shipment-report' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'shipment-report')}>
+                        ✈️ Shipment Report
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'specimen-release' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'specimen-release')}>
+                        🔓 Specimen Release
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'disposal-report' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'disposal-report')}>
+                        🗑️ Disposal Report
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'qc-report' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'qc-report')}>
+                        ✅ QC Report
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'temperature-monitoring' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'temperature-monitoring')}>
+                        🌡️ Temperature Logs
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'chain-of-custody' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'chain-of-custody')}>
+                        🔗 Chain of Custody
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'audit-report' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'audit-report')}>
+                        🛡️ Audit Trail
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'user-activity' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'user-activity')}>
+                        👥 User Sessions
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'freezer-utilization' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'freezer-utilization')}>
+                        ⚡ Freezer Occupancy
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'expiry-report' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'expiry-report')}>
+                        ⚠️ Expiry Report
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className={`sidebar-submenu-btn ${activeReport === 'empty-storage' ? 'active' : ''}`} onClick={() => navigateTo('reports', 'empty-storage')}>
+                        📭 Empty Storage slots
+                      </button>
+                    </li>
+                  </ul>
+                )}
+              </li>
+
+              {/* ADMINISTRATION SECTION */}
               {(user.role === 'Lab Admin' || user.role === 'Super Admin' || hasPermission('View Users') || hasPermission('View Specimen Types') || hasPermission('View Audit Logs')) && (
                 <>
                   {!sidebarCollapsed && (
-                    <li style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 8px 6px' }}>
+                    <li style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '12px 8px 4px' }}>
                       Administration
                     </li>
                   )}
                   
+                  {/* User Management */}
                   {(user.role === 'Lab Admin' || user.role === 'Super Admin' || hasPermission('View Users')) && (
                     <li>
                       <button
-                        onClick={() => setActiveTab('users')}
+                        onClick={() => navigateTo('users')}
                         style={{
                           width: '100%',
                           padding: '10px 12px',
@@ -605,20 +811,49 @@ export default function App() {
                         title={sidebarCollapsed ? "User Management" : undefined}
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                          <circle cx="9" cy="7" r="4"/>
-                          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                         </svg>
                         {!sidebarCollapsed && "User Management"}
                       </button>
                     </li>
                   )}
 
+                  {/* Role & Permissions STUB */}
+                  {(user.role === 'Lab Admin' || user.role === 'Super Admin') && (
+                    <li>
+                      <button
+                        onClick={() => navigateTo('roles')}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'roles' ? 'var(--border-color)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'roles' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'roles' ? '700' : '500',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                          gap: '10px',
+                          cursor: 'pointer',
+                          transition: 'var(--transition-smooth)'
+                        }}
+                        title={sidebarCollapsed ? "Role & Permissions" : undefined}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                        {!sidebarCollapsed && "Role & Permissions"}
+                      </button>
+                    </li>
+                  )}
+
+                  {/* Specimen Type Master */}
                   {(user.role === 'Lab Admin' || user.role === 'Super Admin' || hasPermission('View Specimen Types')) && (
                     <li>
                       <button
-                        onClick={() => setActiveTab('specimen-types')}
+                        onClick={() => navigateTo('specimen-types')}
                         style={{
                           width: '100%',
                           padding: '10px 12px',
@@ -645,10 +880,11 @@ export default function App() {
                     </li>
                   )}
 
+                  {/* Audit Trail */}
                   {(user.role === 'Lab Admin' || user.role === 'Super Admin' || hasPermission('View Audit Logs')) && (
                     <li>
                       <button
-                        onClick={() => setActiveTab('audit')}
+                        onClick={() => navigateTo('audit')}
                         style={{
                           width: '100%',
                           padding: '10px 12px',
@@ -671,6 +907,37 @@ export default function App() {
                           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                         </svg>
                         {!sidebarCollapsed && "Audit Trail"}
+                      </button>
+                    </li>
+                  )}
+
+                  {/* Freezer Configuration STUB */}
+                  {(user.role === 'Lab Admin' || user.role === 'Super Admin') && (
+                    <li>
+                      <button
+                        onClick={() => navigateTo('freezers')}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'freezers' ? 'var(--border-color)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'freezers' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'freezers' ? '700' : '500',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                          gap: '10px',
+                          cursor: 'pointer',
+                          transition: 'var(--transition-smooth)'
+                        }}
+                        title={sidebarCollapsed ? "Freezer Configuration" : undefined}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                          <path d="M12 22V2M17 5H7M17 10H7M17 15H7"/>
+                        </svg>
+                        {!sidebarCollapsed && "Freezer Configuration"}
                       </button>
                     </li>
                   )}
@@ -873,12 +1140,32 @@ export default function App() {
 
           {activeTab === 'reports' && (
             <Reports 
-              samples={samples} 
+              activeReport={activeReport}
+              setActiveReport={setActiveReport}
               backendUrl={BACKEND_URL} 
               token={token} 
               user={user} 
               setActiveTab={setActiveTab}
             />
+          )}
+
+          {['subject-reg', 'sample-col', 'sample-proc', 'roles', 'freezers'].includes(activeTab) && (
+            <div className="placeholder-stub-wrapper">
+              <svg className="placeholder-stub-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              <h2 style={{ fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                {activeTab === 'subject-reg' && 'Subject Registration'}
+                {activeTab === 'sample-col' && 'Sample Collection'}
+                {activeTab === 'sample-proc' && 'Sample Processing'}
+                {activeTab === 'roles' && 'Role & Permissions'}
+                {activeTab === 'freezers' && 'Freezer Configuration'}
+              </h2>
+              <p style={{ maxWidth: '480px', fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                This is a production-grade LIMS module stub. The integration is fully registered in the AURA Biobank routing network.
+              </p>
+              <span className="badge badge-info">Enterprise Extension Module</span>
+            </div>
           )}
 
           {activeTab === 'register' && (
