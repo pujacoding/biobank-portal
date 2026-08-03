@@ -6,13 +6,23 @@ function getPaginationParams(req) {
   const pageSize = parseInt(req.query.pageSize, 10) || 10;
   const offset = (page - 1) * pageSize;
   const sortBy = req.query.sortBy || '';
-  const sortOrder = req.query.sortOrder === 'desc' ? 'DESC' : 'ASC';
+  // Default to DESC to show the newest entries first
+  const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
   const search = req.query.search || '';
   return { page, pageSize, offset, sortBy, sortOrder, search };
 }
 
-// Helper to fetch global summary card metrics
-async function getSummaryMetrics() {
+// Helper to determine if we should filter by lab
+function getLabFilter(req) {
+  const hasFilter = req.user && req.user.labId && req.user.role !== 'Super Admin';
+  return {
+    hasFilter,
+    labId: hasFilter ? req.user.labId : null
+  };
+}
+
+// Helper to fetch lab-isolated summary card metrics
+async function getSummaryMetrics(req) {
   const metrics = {
     totalRecords: 0,
     totalSamples: 0,
@@ -25,8 +35,10 @@ async function getSummaryMetrics() {
     pendingQc: 0
   };
 
+  const { hasFilter, labId } = getLabFilter(req);
+
   try {
-    const samplesCount = await pool.query(`
+    let samplesSql = `
       SELECT 
         COUNT(*) as total,
         COUNT(CASE WHEN status = 'Collected' THEN 1 END) as collected,
@@ -34,10 +46,22 @@ async function getSummaryMetrics() {
         COUNT(CASE WHEN status = 'Released' OR retrieval_status = 'Released' THEN 1 END) as released,
         COUNT(CASE WHEN status = 'Disposed' THEN 1 END) as disposed,
         COUNT(CASE WHEN qc_status = 'Pending' THEN 1 END) as pending_qc
-      FROM samples
-    `);
+      FROM samples s
+    `;
+    const samplesParams = [];
+    if (hasFilter) {
+      samplesSql += " WHERE s.lab_id = $1";
+      samplesParams.push(labId);
+    }
+    const samplesCount = await pool.query(samplesSql, samplesParams);
 
-    const processingCount = await pool.query("SELECT COUNT(*) FROM sample_processing");
+    let processingSql = "SELECT COUNT(*) FROM sample_processing";
+    const processingParams = [];
+    if (hasFilter) {
+      processingSql = "SELECT COUNT(*) FROM sample_processing sp JOIN samples s ON sp.sample_id = s.id WHERE s.lab_id = $1";
+      processingParams.push(labId);
+    }
+    const processingCount = await pool.query(processingSql, processingParams);
 
     metrics.totalSamples = parseInt(samplesCount.rows[0].total || 0, 10);
     metrics.collected = parseInt(samplesCount.rows[0].collected || 0, 10);
@@ -47,12 +71,18 @@ async function getSummaryMetrics() {
     metrics.pendingQc = parseInt(samplesCount.rows[0].pending_qc || 0, 10);
     metrics.processed = parseInt(processingCount.rows[0].count || 0, 10);
 
-    // Expired calculation (Blood > 30 days, others > 2 years for simulation)
-    const expiredCount = await pool.query(`
-      SELECT COUNT(*) FROM samples 
-      WHERE (specimen_type = 'Blood' AND collection_date::date < CURRENT_DATE - INTERVAL '30 days')
-         OR (specimen_type != 'Blood' AND collection_date::date < CURRENT_DATE - INTERVAL '730 days')
-    `);
+    // Expired calculation
+    let expiredSql = `
+      SELECT COUNT(*) FROM samples s
+      WHERE ((s.specimen_type = 'Blood' AND s.collection_date::date < CURRENT_DATE - INTERVAL '30 days')
+         OR (s.specimen_type != 'Blood' AND s.collection_date::date < CURRENT_DATE - INTERVAL '730 days'))
+    `;
+    const expiredParams = [];
+    if (hasFilter) {
+      expiredSql += " AND s.lab_id = $1";
+      expiredParams.push(labId);
+    }
+    const expiredCount = await pool.query(expiredSql, expiredParams);
     metrics.expired = parseInt(expiredCount.rows[0].count || 0, 10);
     
   } catch (err) {
@@ -65,73 +95,100 @@ async function getSummaryMetrics() {
 // 1. Dashboard Analytics Endpoint
 export async function getDashboardAnalytics(req, res, next) {
   try {
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     // Sample Collection Trends (by month)
-    const collectionTrends = await pool.query(`
+    let collectionSql = `
       SELECT SUBSTRING(collection_date FROM 1 FOR 7) as month, COUNT(*) as count 
-      FROM samples 
-      GROUP BY month 
-      ORDER BY month DESC 
-      LIMIT 12
-    `);
+      FROM samples s
+    `;
+    const collectionParams = [];
+    if (hasFilter) {
+      collectionSql += " WHERE s.lab_id = $1";
+      collectionParams.push(labId);
+    }
+    collectionSql += " GROUP BY month ORDER BY month DESC LIMIT 12";
+    const collectionTrends = await pool.query(collectionSql, collectionParams);
 
     // Storage Utilization
     const totalCapacityRes = await pool.query("SELECT SUM(capacity) as total FROM freezer_configurations");
-    const occupiedSlotsRes = await pool.query("SELECT COUNT(*) as total FROM samples WHERE location IS NOT NULL AND status != 'Disposed' AND retrieval_status != 'Retrieved'");
+    
+    let occupiedSql = "SELECT COUNT(*) as total FROM samples s WHERE s.location IS NOT NULL AND s.status != 'Disposed' AND s.retrieval_status != 'Retrieved'";
+    const occupiedParams = [];
+    if (hasFilter) {
+      occupiedSql += " AND s.lab_id = $1";
+      occupiedParams.push(labId);
+    }
+    const occupiedSlotsRes = await pool.query(occupiedSql, occupiedParams);
     
     const capacity = parseInt(totalCapacityRes.rows[0].total || 3100, 10);
     const occupied = parseInt(occupiedSlotsRes.rows[0].total || 0, 10);
 
-    // Freezer Occupancy
-    const freezersOccupancy = await pool.query(`
+    // Freezer Occupancy (isolated sample count)
+    let freezerSql = `
       SELECT 
         fc.freezer_id, 
         fc.name, 
         fc.capacity,
         COUNT(s.id) as occupied
       FROM freezer_configurations fc
-      LEFT JOIN samples s ON s.location LIKE fc.freezer_id || '%' AND s.retrieval_status != 'Retrieved' AND s.status != 'Disposed'
+      LEFT JOIN samples s ON s.location LIKE fc.freezer_id || '%' AND s.retrieval_status != 'Retrieved' AND s.status != 'Disposed' ${hasFilter ? 'AND s.lab_id = $1' : ''}
       GROUP BY fc.freezer_id, fc.name, fc.capacity
       ORDER BY fc.freezer_id
-    `);
+    `;
+    const freezerParams = hasFilter ? [labId] : [];
+    const freezersOccupancy = await pool.query(freezerSql, freezerParams);
 
     // Specimen Type Distribution
-    const specimenDistribution = await pool.query(`
-      SELECT specimen_type, COUNT(*) as count 
-      FROM samples 
-      GROUP BY specimen_type 
-      ORDER BY count DESC
-    `);
+    let specSql = `SELECT specimen_type, COUNT(*) as count FROM samples s`;
+    const specParams = [];
+    if (hasFilter) {
+      specSql += " WHERE s.lab_id = $1";
+      specParams.push(labId);
+    }
+    specSql += " GROUP BY specimen_type ORDER BY count DESC";
+    const specimenDistribution = await pool.query(specSql, specParams);
 
     // QC Verdict Rates
-    const qcResultRes = await pool.query(`
-      SELECT qc_result, COUNT(*) as count 
-      FROM qc_reports 
-      GROUP BY qc_result
-    `);
+    let qcSql = `SELECT qr.qc_result, COUNT(*) as count FROM qc_reports qr JOIN samples s ON qr.sample_id = s.id`;
+    const qcParams = [];
+    if (hasFilter) {
+      qcSql += " WHERE s.lab_id = $1";
+      qcParams.push(labId);
+    }
+    qcSql += " GROUP BY qr.qc_result";
+    const qcResultRes = await pool.query(qcSql, qcParams);
 
     // Shipment Trends
-    const shipmentTrends = await pool.query(`
-      SELECT destination, COUNT(*) as count 
-      FROM shipments 
-      GROUP BY destination
-    `);
+    let shipSql = `SELECT destination, COUNT(*) as count FROM shipments`;
+    const shipParams = [];
+    if (hasFilter) {
+      shipSql += " WHERE origin_lab_id = $1";
+      shipParams.push(labId);
+    }
+    shipSql += " GROUP BY destination";
+    const shipmentTrends = await pool.query(shipSql, shipParams);
 
     // Disposal Trends
-    const disposalTrends = await pool.query(`
-      SELECT reason, COUNT(*) as count 
-      FROM disposals 
-      GROUP BY reason
-    `);
+    let dispSql = `SELECT d.reason, COUNT(*) as count FROM disposals d JOIN samples s ON d.sample_id = s.id`;
+    const dispParams = [];
+    if (hasFilter) {
+      dispSql += " WHERE s.lab_id = $1";
+      dispParams.push(labId);
+    }
+    dispSql += " GROUP BY d.reason";
+    const disposalTrends = await pool.query(dispSql, dispParams);
 
     // Recent User Activities
-    const recentActivities = await pool.query(`
-      SELECT user_name, role, module_name, action_type, timestamp 
-      FROM user_activity_logs 
-      ORDER BY timestamp DESC 
-      LIMIT 10
-    `);
+    let actSql = `SELECT user_name, role, module_name, action_type, timestamp FROM user_activity_logs`;
+    const actParams = [];
+    if (hasFilter) {
+      actSql += " WHERE lab_id = $1";
+      actParams.push(labId);
+    }
+    actSql += " ORDER BY timestamp DESC LIMIT 10";
+    const recentActivities = await pool.query(actSql, actParams);
 
     res.json({
       summary,
@@ -158,12 +215,19 @@ export async function getDashboardAnalytics(req, res, next) {
 export async function getSpecimenInventory(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     // Filters
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
+
+    if (hasFilter) {
+      filterQueries.push(`s.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
 
     if (search) {
       filterQueries.push(`(s.id ILIKE $${paramIndex} OR s.subject_id ILIKE $${paramIndex} OR s.diagnosis ILIKE $${paramIndex})`);
@@ -279,11 +343,18 @@ export async function getSpecimenInventory(req, res, next) {
 export async function getSampleCollection(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
+
+    if (hasFilter) {
+      filterQueries.push(`s.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
 
     if (search) {
       filterQueries.push(`(s.subject_id ILIKE $${paramIndex} OR u.name ILIKE $${paramIndex} OR l.name ILIKE $${paramIndex})`);
@@ -345,39 +416,52 @@ export async function getSampleCollection(req, res, next) {
 export async function getSampleProcessing(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
 
+    if (hasFilter) {
+      filterQueries.push(`s.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
+
     if (search) {
-      filterQueries.push(`(sample_id ILIKE $${paramIndex} OR processing_step ILIKE $${paramIndex} OR operator ILIKE $${paramIndex})`);
+      filterQueries.push(`(sp.sample_id ILIKE $${paramIndex} OR sp.processing_step ILIKE $${paramIndex} OR sp.operator ILIKE $${paramIndex})`);
       filterValues.push(`%${search}%`);
       paramIndex++;
     }
 
     const whereClause = filterQueries.length > 0 ? 'WHERE ' + filterQueries.join(' AND ') : '';
-    let orderByCol = 'start_time';
-    if (sortBy === 'sampleId') orderByCol = 'sample_id';
-    else if (sortBy === 'processingStep') orderByCol = 'processing_step';
-    else if (sortBy === 'operator') orderByCol = 'operator';
-    else if (sortBy === 'status') orderByCol = 'status';
+    let orderByCol = 'sp.start_time';
+    if (sortBy === 'sampleId') orderByCol = 'sp.sample_id';
+    else if (sortBy === 'processingStep') orderByCol = 'sp.processing_step';
+    else if (sortBy === 'operator') orderByCol = 'sp.operator';
+    else if (sortBy === 'status') orderByCol = 'sp.status';
 
-    const countRes = await pool.query(`SELECT COUNT(*) as total FROM sample_processing ${whereClause}`, filterValues);
+    const countRes = await pool.query(`
+      SELECT COUNT(*) as total 
+      FROM sample_processing sp
+      JOIN samples s ON sp.sample_id = s.id
+      ${whereClause}
+    `, filterValues);
     const totalRecords = parseInt(countRes.rows[0].total, 10);
     summary.totalRecords = totalRecords;
 
     const dataQuery = `
       SELECT 
-        sample_id as "sampleId",
-        processing_step as "processingStep",
-        operator,
-        start_time as "startTime",
-        end_time as "endTime",
-        duration,
-        status
-      FROM sample_processing
+        sp.sample_id as "sampleId",
+        sp.processing_step as "processingStep",
+        sp.operator,
+        sp.start_time as "startTime",
+        sp.end_time as "endTime",
+        sp.duration,
+        sp.status
+      FROM sample_processing sp
+      JOIN samples s ON sp.sample_id = s.id
       ${whereClause}
       ORDER BY ${orderByCol} ${sortOrder}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -404,35 +488,48 @@ export async function getSampleProcessing(req, res, next) {
 export async function getConsentReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
 
+    if (hasFilter) {
+      filterQueries.push(`s.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
+
     if (search) {
-      filterQueries.push(`(subject_id ILIKE $${paramIndex} OR consent_version ILIKE $${paramIndex})`);
+      filterQueries.push(`(c.subject_id ILIKE $${paramIndex} OR c.consent_version ILIKE $${paramIndex})`);
       filterValues.push(`%${search}%`);
       paramIndex++;
     }
 
     const whereClause = filterQueries.length > 0 ? 'WHERE ' + filterQueries.join(' AND ') : '';
-    let orderByCol = 'consent_date';
-    if (sortBy === 'subjectId') orderByCol = 'subject_id';
-    else if (sortBy === 'consentStatus') orderByCol = 'verification_status';
+    let orderByCol = 'c.consent_date';
+    if (sortBy === 'subjectId') orderByCol = 'c.subject_id';
+    else if (sortBy === 'consentStatus') orderByCol = 'c.verification_status';
 
-    const countRes = await pool.query(`SELECT COUNT(*) as total FROM consent ${whereClause}`, filterValues);
+    const countRes = await pool.query(`
+      SELECT COUNT(DISTINCT c.id) as total 
+      FROM consent c
+      JOIN samples s ON c.subject_id = s.subject_id
+      ${whereClause}
+    `, filterValues);
     const totalRecords = parseInt(countRes.rows[0].total, 10);
     summary.totalRecords = totalRecords;
 
     const dataQuery = `
-      SELECT 
-        subject_id as "subjectId",
-        consent_version as "consentVersion",
-        consent_date as "consentDate",
-        (consent_date::date + INTERVAL '5 years')::date::text as "expiryDate",
-        verification_status as "consentStatus"
-      FROM consent
+      SELECT DISTINCT
+        c.subject_id as "subjectId",
+        c.consent_version as "consentVersion",
+        c.consent_date as "consentDate",
+        (c.consent_date::date + INTERVAL '5 years')::date::text as "expiryDate",
+        c.verification_status as "consentStatus"
+      FROM consent c
+      JOIN samples s ON c.subject_id = s.subject_id
       ${whereClause}
       ORDER BY ${orderByCol} ${sortOrder}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -459,7 +556,7 @@ export async function getConsentReport(req, res, next) {
 export async function getInventoryReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
 
     let filterQueries = [];
     let filterValues = [];
@@ -514,32 +611,39 @@ export async function getInventoryReport(req, res, next) {
 export async function getStorageReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
-    let filterQueries = ['location IS NOT NULL'];
+    let filterQueries = ['s.location IS NOT NULL'];
     let filterValues = [];
     let paramIndex = 1;
 
+    if (hasFilter) {
+      filterQueries.push(`s.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
+
     if (search) {
-      filterQueries.push(`(id ILIKE $${paramIndex} OR location ILIKE $${paramIndex})`);
+      filterQueries.push(`(s.id ILIKE $${paramIndex} OR s.location ILIKE $${paramIndex})`);
       filterValues.push(`%${search}%`);
       paramIndex++;
     }
 
     const whereClause = 'WHERE ' + filterQueries.join(' AND ');
-    let orderByCol = 'id';
-    if (sortBy === 'sampleId') orderByCol = 'id';
-    else if (sortBy === 'storageLocation') orderByCol = 'location';
+    let orderByCol = 's.id';
+    if (sortBy === 'sampleId') orderByCol = 's.id';
+    else if (sortBy === 'storageLocation') orderByCol = 's.location';
 
-    const countRes = await pool.query(`SELECT COUNT(*) as total FROM samples ${whereClause}`, filterValues);
+    const countRes = await pool.query(`SELECT COUNT(*) as total FROM samples s ${whereClause}`, filterValues);
     const totalRecords = parseInt(countRes.rows[0].total, 10);
     summary.totalRecords = totalRecords;
 
     const dataQuery = `
       SELECT 
-        id as "sampleId",
-        location as "storageLocation"
-      FROM samples
+        s.id as "sampleId",
+        s.location as "storageLocation"
+      FROM samples s
       ${whereClause}
       ORDER BY ${orderByCol} ${sortOrder}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -587,11 +691,18 @@ export async function getStorageReport(req, res, next) {
 export async function getShipmentReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
+
+    if (hasFilter) {
+      filterQueries.push(`origin_lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
 
     if (search) {
       filterQueries.push(`(id ILIKE $${paramIndex} OR destination ILIKE $${paramIndex})`);
@@ -645,11 +756,19 @@ export async function getShipmentReport(req, res, next) {
 export async function getSpecimenReleaseReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
+
+    // Filter by IRB requests initiated in active lab if applicable
+    if (hasFilter) {
+      filterQueries.push(`(SELECT COUNT(*) FROM samples s WHERE s.lab_id = $${paramIndex} AND s.id = ANY(STRING_TO_ARRAY(specimens, ','))) > 0`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
 
     if (search) {
       filterQueries.push(`(researcher_name ILIKE $${paramIndex} OR institution ILIKE $${paramIndex} OR irb_code ILIKE $${paramIndex})`);
@@ -703,35 +822,48 @@ export async function getSpecimenReleaseReport(req, res, next) {
 export async function getDisposalReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
 
+    if (hasFilter) {
+      filterQueries.push(`s.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
+
     if (search) {
-      filterQueries.push(`(sample_id ILIKE $${paramIndex} OR reason ILIKE $${paramIndex})`);
+      filterQueries.push(`(d.sample_id ILIKE $${paramIndex} OR d.reason ILIKE $${paramIndex})`);
       filterValues.push(`%${search}%`);
       paramIndex++;
     }
 
     const whereClause = filterQueries.length > 0 ? 'WHERE ' + filterQueries.join(' AND ') : '';
-    let orderByCol = 'disposal_date';
-    if (sortBy === 'disposalId') orderByCol = 'id';
-    else if (sortBy === 'sampleId') orderByCol = 'sample_id';
+    let orderByCol = 'd.disposal_date';
+    if (sortBy === 'disposalId') orderByCol = 'd.id';
+    else if (sortBy === 'sampleId') orderByCol = 'd.sample_id';
 
-    const countRes = await pool.query(`SELECT COUNT(*) as total FROM disposals ${whereClause}`, filterValues);
+    const countRes = await pool.query(`
+      SELECT COUNT(*) as total 
+      FROM disposals d
+      JOIN samples s ON d.sample_id = s.id
+      ${whereClause}
+    `, filterValues);
     const totalRecords = parseInt(countRes.rows[0].total, 10);
     summary.totalRecords = totalRecords;
 
     const dataQuery = `
       SELECT 
-        id as "disposalId",
-        sample_id as "sampleId",
-        reason,
-        approved_by as "approvedBy",
-        disposal_date::date::text as "disposalDate"
-      FROM disposals
+        d.id as "disposalId",
+        d.sample_id as "sampleId",
+        d.reason,
+        d.approved_by as "approvedBy",
+        d.disposal_date::date::text as "disposalDate"
+      FROM disposals d
+      JOIN samples s ON d.sample_id = s.id
       ${whereClause}
       ORDER BY ${orderByCol} ${sortOrder}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -758,38 +890,51 @@ export async function getDisposalReport(req, res, next) {
 export async function getQCReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
 
+    if (hasFilter) {
+      filterQueries.push(`s.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
+
     if (search) {
-      filterQueries.push(`(sample_id ILIKE $${paramIndex} OR technician ILIKE $${paramIndex})`);
+      filterQueries.push(`(qr.sample_id ILIKE $${paramIndex} OR qr.technician ILIKE $${paramIndex})`);
       filterValues.push(`%${search}%`);
       paramIndex++;
     }
 
     const whereClause = filterQueries.length > 0 ? 'WHERE ' + filterQueries.join(' AND ') : '';
-    let orderByCol = 'sample_id';
-    if (sortBy === 'sampleId') orderByCol = 'sample_id';
-    else if (sortBy === 'concentration') orderByCol = 'concentration';
-    else if (sortBy === 'purity') orderByCol = 'purity';
-    else if (sortBy === 'qcResult') orderByCol = 'qc_result';
+    let orderByCol = 'qr.sample_id';
+    if (sortBy === 'sampleId') orderByCol = 'qr.sample_id';
+    else if (sortBy === 'concentration') orderByCol = 'qr.concentration';
+    else if (sortBy === 'purity') orderByCol = 'qr.purity';
+    else if (sortBy === 'qcResult') orderByCol = 'qr.qc_result';
 
-    const countRes = await pool.query(`SELECT COUNT(*) as total FROM qc_reports ${whereClause}`, filterValues);
+    const countRes = await pool.query(`
+      SELECT COUNT(*) as total 
+      FROM qc_reports qr
+      JOIN samples s ON qr.sample_id = s.id
+      ${whereClause}
+    `, filterValues);
     const totalRecords = parseInt(countRes.rows[0].total, 10);
     summary.totalRecords = totalRecords;
 
     const dataQuery = `
       SELECT 
-        sample_id as "sampleId",
-        concentration as "concentration",
-        purity as "purity",
-        qc_result as "qcResult",
-        qc_status as "qcStatus",
-        technician
-      FROM qc_reports
+        qr.sample_id as "sampleId",
+        qr.concentration as "concentration",
+        qr.purity as "purity",
+        qr.qc_result as "qcResult",
+        qr.qc_status as "qcStatus",
+        qr.technician
+      FROM qc_reports qr
+      JOIN samples s ON qr.sample_id = s.id
       ${whereClause}
       ORDER BY ${orderByCol} ${sortOrder}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -820,7 +965,7 @@ export async function getQCReport(req, res, next) {
 export async function getTemperatureReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
 
     let filterQueries = [];
     let filterValues = [];
@@ -881,11 +1026,19 @@ export async function getTemperatureReport(req, res, next) {
 export async function getChainOfCustodyReport(req, res, next) {
   try {
     const { search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let sampleId = search.trim();
     if (!sampleId) {
-      const defaultSampleRes = await pool.query("SELECT id FROM samples ORDER BY created_at DESC LIMIT 1");
+      let latestSql = "SELECT id FROM samples s";
+      const latestParams = [];
+      if (hasFilter) {
+        latestSql += " WHERE s.lab_id = $1";
+        latestParams.push(labId);
+      }
+      latestSql += " ORDER BY s.created_at DESC LIMIT 1";
+      const defaultSampleRes = await pool.query(latestSql, latestParams);
       if (defaultSampleRes.rows.length > 0) {
         sampleId = defaultSampleRes.rows[0].id;
       }
@@ -896,8 +1049,8 @@ export async function getChainOfCustodyReport(req, res, next) {
     }
 
     const sampleRes = await pool.query("SELECT * FROM samples WHERE id = $1", [sampleId]);
-    if (sampleRes.rows.length === 0) {
-      return res.json({ summary, sampleId, error: 'Sample not found', timeline: [] });
+    if (sampleRes.rows.length === 0 || (hasFilter && sampleRes.rows[0].lab_id !== labId)) {
+      return res.json({ summary, sampleId, error: 'Sample not found in active laboratory context', timeline: [] });
     }
 
     const sample = sampleRes.rows[0];
@@ -1006,11 +1159,18 @@ export async function getChainOfCustodyReport(req, res, next) {
 export async function getAuditTrailReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
+
+    if (hasFilter) {
+      filterQueries.push(`lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
 
     if (search) {
       filterQueries.push(`(user_name ILIKE $${paramIndex} OR role ILIKE $${paramIndex} OR action_type ILIKE $${paramIndex} OR module_name ILIKE $${paramIndex})`);
@@ -1064,36 +1224,50 @@ export async function getAuditTrailReport(req, res, next) {
 export async function getUserActivityReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
 
+    if (hasFilter) {
+      // Filter sessions of users registered under active lab
+      filterQueries.push(`u.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
+
     if (search) {
-      filterQueries.push(`(user_name ILIKE $${paramIndex} OR role ILIKE $${paramIndex} OR performed_actions ILIKE $${paramIndex})`);
+      filterQueries.push(`(us.user_name ILIKE $${paramIndex} OR us.role ILIKE $${paramIndex} OR us.performed_actions ILIKE $${paramIndex})`);
       filterValues.push(`%${search}%`);
       paramIndex++;
     }
 
     const whereClause = filterQueries.length > 0 ? 'WHERE ' + filterQueries.join(' AND ') : '';
-    let orderByCol = 'login_time';
-    if (sortBy === 'user') orderByCol = 'user_name';
-    else if (sortBy === 'sessionDuration') orderByCol = 'session_duration';
+    let orderByCol = 'us.login_time';
+    if (sortBy === 'user') orderByCol = 'us.user_name';
+    else if (sortBy === 'sessionDuration') orderByCol = 'us.session_duration';
 
-    const countRes = await pool.query(`SELECT COUNT(*) as total FROM user_sessions ${whereClause}`, filterValues);
+    const countRes = await pool.query(`
+      SELECT COUNT(*) as total 
+      FROM user_sessions us
+      JOIN users u ON us.user_name = u.name
+      ${whereClause}
+    `, filterValues);
     const totalRecords = parseInt(countRes.rows[0].total, 10);
     summary.totalRecords = totalRecords;
 
     const dataQuery = `
       SELECT 
-        user_name as "user",
-        role,
-        login_time as "loginTime",
-        logout_time as "logoutTime",
-        session_duration as "sessionDuration",
-        performed_actions as "performedActions"
-      FROM user_sessions
+        us.user_name as "user",
+        us.role,
+        us.login_time as "loginTime",
+        us.logout_time as "logoutTime",
+        us.session_duration as "sessionDuration",
+        us.performed_actions as "performedActions"
+      FROM user_sessions us
+      JOIN users u ON us.user_name = u.name
       ${whereClause}
       ORDER BY ${orderByCol} ${sortOrder}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
@@ -1120,7 +1294,8 @@ export async function getUserActivityReport(req, res, next) {
 export async function getFreezerUtilizationReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let orderByCol = 'fc.freezer_id';
     if (sortBy === 'freezer') orderByCol = 'fc.freezer_id';
@@ -1136,13 +1311,15 @@ export async function getFreezerUtilizationReport(req, res, next) {
         fc.capacity,
         COUNT(s.id) as occupied
       FROM freezer_configurations fc
-      LEFT JOIN samples s ON s.location LIKE fc.freezer_id || '%' AND s.retrieval_status != 'Retrieved' AND s.status != 'Disposed'
+      LEFT JOIN samples s ON s.location LIKE fc.freezer_id || '%' AND s.retrieval_status != 'Retrieved' AND s.status != 'Disposed' ${hasFilter ? 'AND s.lab_id = $3' : ''}
       GROUP BY fc.freezer_id, fc.capacity
       ORDER BY ${orderByCol} ${sortOrder}
       LIMIT $1 OFFSET $2
     `;
 
-    const dataRes = await pool.query(queryStr, [pageSize, offset]);
+    const params = [pageSize, offset];
+    if (hasFilter) params.push(labId);
+    const dataRes = await pool.query(queryStr, params);
 
     const rows = dataRes.rows.map(f => {
       const occupied = parseInt(f.occupied, 10);
@@ -1176,36 +1353,43 @@ export async function getFreezerUtilizationReport(req, res, next) {
 export async function getExpiryReport(req, res, next) {
   try {
     const { offset, pageSize, sortBy, sortOrder, search } = getPaginationParams(req);
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     let filterQueries = [];
     let filterValues = [];
     let paramIndex = 1;
 
+    if (hasFilter) {
+      filterQueries.push(`s.lab_id = $${paramIndex}`);
+      filterValues.push(labId);
+      paramIndex++;
+    }
+
     if (search) {
-      filterQueries.push(`(id ILIKE $${paramIndex} OR specimen_type ILIKE $${paramIndex})`);
+      filterQueries.push(`(s.id ILIKE $${paramIndex} OR s.specimen_type ILIKE $${paramIndex})`);
       filterValues.push(`%${search}%`);
       paramIndex++;
     }
 
     const whereClause = filterQueries.length > 0 ? 'WHERE ' + filterQueries.join(' AND ') : '';
 
-    const countRes = await pool.query(`SELECT COUNT(*) as total FROM samples ${whereClause}`, filterValues);
+    const countRes = await pool.query(`SELECT COUNT(*) as total FROM samples s ${whereClause}`, filterValues);
     const totalRecords = parseInt(countRes.rows[0].total, 10);
     summary.totalRecords = totalRecords;
 
     const queryStr = `
       SELECT 
-        id as "sampleId",
-        specimen_type as "specimenType",
-        collection_date,
+        s.id as "sampleId",
+        s.specimen_type as "specimenType",
+        s.collection_date,
         CASE 
-          WHEN specimen_type = 'Blood' THEN (collection_date::date + INTERVAL '30 days')::text
-          WHEN specimen_type IN ('Serum', 'Plasma') THEN (collection_date::date + INTERVAL '730 days')::text
-          WHEN specimen_type IN ('Tissue', 'FFPE Tissue', 'Frozen Tissue') THEN (collection_date::date + INTERVAL '1825 days')::text
-          ELSE (collection_date::date + INTERVAL '730 days')::text
+          WHEN s.specimen_type = 'Blood' THEN (s.collection_date::date + INTERVAL '30 days')::text
+          WHEN s.specimen_type IN ('Serum', 'Plasma') THEN (s.collection_date::date + INTERVAL '730 days')::text
+          WHEN s.specimen_type IN ('Tissue', 'FFPE Tissue', 'Frozen Tissue') THEN (s.collection_date::date + INTERVAL '1825 days')::text
+          ELSE (s.collection_date::date + INTERVAL '730 days')::text
         END as "expiryDate"
-      FROM samples
+      FROM samples s
       ${whereClause}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
@@ -1255,12 +1439,19 @@ export async function getExpiryReport(req, res, next) {
 // 18. Empty Storage Report
 export async function getEmptyStorageReport(req, res, next) {
   try {
-    const summary = await getSummaryMetrics();
+    const summary = await getSummaryMetrics(req);
+    const { hasFilter, labId } = getLabFilter(req);
 
     const freezersRes = await pool.query("SELECT * FROM freezer_configurations WHERE status = 'Active'");
     const freezers = freezersRes.rows;
 
-    const occupiedRes = await pool.query("SELECT location FROM samples WHERE location IS NOT NULL AND retrieval_status != 'Retrieved' AND status != 'Disposed'");
+    let occupiedSql = "SELECT location FROM samples WHERE location IS NOT NULL AND retrieval_status != 'Retrieved' AND status != 'Disposed'";
+    const occupiedParams = [];
+    if (hasFilter) {
+      occupiedSql += " AND lab_id = $1";
+      occupiedParams.push(labId);
+    }
+    const occupiedRes = await pool.query(occupiedSql, occupiedParams);
     const occupiedSet = new Set(occupiedRes.rows.map(r => r.location));
 
     const rows = [];
