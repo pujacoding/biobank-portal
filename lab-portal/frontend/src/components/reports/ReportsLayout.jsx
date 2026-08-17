@@ -32,7 +32,7 @@ export default function ReportsLayout({
   const [loading, setLoading] = useState(false);
   const [generatedTime, setGeneratedTime] = useState('');
   const [sortBy, setSortBy] = useState('');
-  const [sortOrder, setSortOrder] = useState('desc');
+  const [sortOrder, setSortOrder] = useState('asc');
   
   // Advanced Filters State
   const [showFilters, setShowFilters] = useState(true);
@@ -73,11 +73,9 @@ export default function ReportsLayout({
         }
       });
 
-      const activeLab = localStorage.getItem('aura_active_lab_id');
       const response = await fetch(`/api/reports/${reportEndpoint}?${queryParams.toString()}`, {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
-          ...(activeLab ? { 'x-active-lab-id': activeLab } : {})
+          'Authorization': `Bearer ${authToken}`
         }
       });
 
