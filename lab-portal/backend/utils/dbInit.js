@@ -116,7 +116,7 @@ export async function initDb() {
     console.log("AURA DB: Action-based permissions for Specimen Type Master initialized.");
 
   } catch (err) {
-    console.error("AURA DB [FATAL] Database initialization failed:", err.message);
+    console.error("AURA DB [FATAL] Database initialization failed:", err);
     throw err;
   }
 }

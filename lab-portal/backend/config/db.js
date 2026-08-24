@@ -10,6 +10,12 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false,
   },
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 5000,
+});
+
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle pg client:', err);
 });
 
 export default pool;
