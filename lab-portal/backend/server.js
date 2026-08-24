@@ -15,6 +15,7 @@ import auditRoutes from './routes/audit.js';
 import userRoutes from './routes/users.js';
 import integrationRoutes from './routes/integration.js';
 import specimenTypeRoutes from './routes/specimenTypes.js';
+import reportsRoutes from './routes/reports.js';
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -36,6 +37,7 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/integration', integrationRoutes);
 app.use('/api/specimen-types', specimenTypeRoutes);
+app.use('/api/reports', reportsRoutes);
 
 // =========================
 // HEALTH CHECK
