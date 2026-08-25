@@ -29,6 +29,8 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [preSelectedSampleId, setPreSelectedSampleId] = useState('');
   const [printBatchSamples, setPrintBatchSamples] = useState([]);
+  const [reportsDropdownOpen, setReportsDropdownOpen] = useState(false);
+  const [reportsCategory, setReportsCategory] = useState('all');
 
   // Active Lab Context States
   const [accessibleLabs, setAccessibleLabs] = useState([]);
@@ -512,33 +514,107 @@ export default function App() {
 
               <li>
                 <button
-                  onClick={() => setActiveTab('reports')}
+                  onClick={() => setReportsDropdownOpen(prev => !prev)}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
                     borderRadius: 'var(--border-radius-sm)',
-                    background: activeTab === 'reports' ? 'var(--border-color)' : 'transparent',
+                    background: activeTab === 'reports' ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
                     border: 'none',
                     color: activeTab === 'reports' ? 'var(--text-primary)' : 'var(--text-secondary)',
                     fontWeight: activeTab === 'reports' ? '700' : '500',
                     fontSize: '13px',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: sidebarCollapsed ? 'center' : 'flex-start',
+                    justifyContent: sidebarCollapsed ? 'center' : 'space-between',
                     gap: '10px',
                     cursor: 'pointer',
                     transition: 'var(--transition-smooth)'
                   }}
                   title={sidebarCollapsed ? "Biobank Reports" : undefined}
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                  </svg>
-                  {!sidebarCollapsed && "Biobank Reports"}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="16" y1="13" x2="8" y2="13"/>
+                      <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                    {!sidebarCollapsed && "Biobank Reports"}
+                  </div>
+                  {!sidebarCollapsed && (
+                    <span style={{ 
+                      fontSize: '9px', 
+                      color: 'var(--text-tertiary)',
+                      transition: 'transform 0.2s', 
+                      transform: reportsDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)' 
+                    }}>
+                      ▼
+                    </span>
+                  )}
                 </button>
+
+                {reportsDropdownOpen && !sidebarCollapsed && (
+                  <ul style={{ 
+                    listStyle: 'none', 
+                    paddingLeft: '24px', 
+                    marginTop: '4px', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '2px' 
+                  }}>
+                    <li>
+                      <button
+                        onClick={() => {
+                          setActiveTab('reports');
+                          setReportsCategory('operations');
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'reports' && reportsCategory === 'operations' ? 'rgba(0, 242, 254, 0.1)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'reports' && reportsCategory === 'operations' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'reports' && reportsCategory === 'operations' ? '700' : '500',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        ⚙️ Operations
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => {
+                          setActiveTab('reports');
+                          setReportsCategory('administration');
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'reports' && reportsCategory === 'administration' ? 'rgba(0, 242, 254, 0.1)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'reports' && reportsCategory === 'administration' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'reports' && reportsCategory === 'administration' ? '700' : '500',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        🛡️ Administration
+                      </button>
+                    </li>
+                  </ul>
+                )}
               </li>
 
               {(user.role === 'Lab Admin' || user.role === 'Super Admin') && (
@@ -878,6 +954,7 @@ export default function App() {
               token={token} 
               user={user} 
               setActiveTab={setActiveTab}
+              reportsCategory={reportsCategory}
             />
           )}
 

@@ -183,6 +183,22 @@ async function runTest() {
       throw e;
     }
 
+    // Test collapsible reports menu
+    console.log("Expanding Biobank Reports menu in sidebar...");
+    await page.click('button:has-text("Biobank Reports")');
+    await page.waitForSelector('button:has-text("Operations")');
+    console.log("Sub-links became visible.");
+
+    console.log("Navigating to Operations Reports...");
+    await page.click('button:has-text("Operations")');
+    await page.waitForSelector('text=Operations Modules');
+    console.log("Operations Reports loaded successfully.");
+
+    console.log("Navigating to Administration Reports...");
+    await page.click('button:has-text("Administration")');
+    await page.waitForSelector('text=Administration Modules');
+    console.log("Administration Reports loaded successfully.");
+
     // Screenshot of success state
     await page.screenshot({ path: path.join(screenshotDir, 'specimen_success_test.png') });
     console.log("Success screenshot saved.");

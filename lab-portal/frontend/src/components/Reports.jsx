@@ -357,9 +357,20 @@ const REPORT_COLUMNS = {
   ]
 };
 
-export default function Reports({ samples, backendUrl, token, user, setActiveTab }) {
+export default function Reports({ samples, backendUrl, token, user, setActiveTab, reportsCategory }) {
   const [activeReport, setActiveReport] = useState('biobank-overview');
   const [expandedGroups, setExpandedGroups] = useState({ dashboard: true });
+
+  // Sync active report when category changes from sidebar
+  useEffect(() => {
+    if (reportsCategory === 'operations') {
+      setActiveReport('sample-collection');
+      setExpandedGroups({ 'sample-collection': true });
+    } else if (reportsCategory === 'administration') {
+      setActiveReport('biobank-overview');
+      setExpandedGroups({ dashboard: true });
+    }
+  }, [reportsCategory]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [totalRecords, setTotalRecords] = useState(0);
@@ -445,10 +456,24 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
     }));
   };
 
+  const filteredGroups = REPORT_GROUPS.filter(group => {
+    if (reportsCategory === 'operations') {
+      return [
+        'sample-collection', 'sample-processing', 'specimen-inventory', 
+        'inventory-storage', 'qc', 'shipment-receiving', 'disposal', 
+        'traceability', 'monitoring'
+      ].includes(group.id);
+    }
+    if (reportsCategory === 'administration') {
+      return ['dashboard', 'subject-consent', 'audit-users'].includes(group.id);
+    }
+    return true;
+  });
+
   // Find active report metadata
   let activeReportItem = null;
   let activeGroupItem = null;
-  for (const group of REPORT_GROUPS) {
+  for (const group of filteredGroups) {
     const found = group.items.find(item => item.id === activeReport);
     if (found) {
       activeReportItem = found;
@@ -623,10 +648,10 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
         {/* Left Side: Accordion Menu */}
         <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left', maxHeight: '720px', overflowY: 'auto' }}>
           <h3 style={{ fontSize: '13px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-tertiary)', margin: '0 0 10px 8px', letterSpacing: '0.05em' }}>
-            Workflow Modules
+            {reportsCategory === 'operations' ? 'Operations Modules' : reportsCategory === 'administration' ? 'Administration Modules' : 'Workflow Modules'}
           </h3>
           
-          {REPORT_GROUPS.map(group => {
+          {filteredGroups.map(group => {
             const isExpanded = !!expandedGroups[group.id];
             return (
               <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
