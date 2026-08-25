@@ -4,7 +4,6 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
   // Form States
   const [gender, setGender] = useState('');
   const [age, setAge] = useState('');
-  const [sampleVolume, setSampleVolume] = useState('');
   const [subjectId, setSubjectId] = useState(() => 'SUBJ-' + Math.random().toString(36).substring(2, 8).toUpperCase());
   
   // Specimen Type Master States
@@ -27,27 +26,90 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
   const [consentDate, setConsentDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [formKey, setFormKey] = useState(0);
 
-  const [containerType, setContainerType] = useState('Tube');
-  const [containerCount, setContainerCount] = useState(1);
-  const [isManualContainerCount, setIsManualContainerCount] = useState(false);
+  const [specimenDetails, setSpecimenDetails] = useState({});
 
   const containerCapacities = {
     'Tube': 4,
     'Vial': 2,
+    '2 mL Cryovial': 2,
     'Jar': 50,
     'Bottle': 250
   };
 
   useEffect(() => {
-    if (!isManualContainerCount && sampleVolume) {
-      const vol = parseFloat(sampleVolume);
-      if (!isNaN(vol) && vol > 0) {
-        const capacity = containerCapacities[containerType] || 4;
-        const count = Math.ceil(vol / capacity);
-        setContainerCount(count);
+    setSpecimenDetails(prev => {
+      const next = { ...prev };
+      let changed = false;
+
+      // 1. Add missing selected specimen IDs
+      selectedSpecimenIds.forEach(id => {
+        if (!next[id]) {
+          next[id] = {
+            volume: '',
+            unit: 'mL',
+            containerType: 'Tube',
+            containerCount: '',
+            isManualContainerCount: false,
+            error: ''
+          };
+          changed = true;
+        }
+      });
+
+      // 2. Remove deselected specimen IDs
+      Object.keys(next).forEach(id => {
+        if (!selectedSpecimenIds.includes(id)) {
+          delete next[id];
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [selectedSpecimenIds]);
+
+  const updateSpecimenDetail = (id, field, value) => {
+    setSpecimenDetails(prev => {
+      const row = prev[id];
+      if (!row) return prev;
+
+      let isManual = row.isManualContainerCount;
+      if (field === 'containerType') {
+        isManual = false;
+      } else if (field === 'containerCount') {
+        isManual = true;
       }
-    }
-  }, [sampleVolume, containerType, isManualContainerCount]);
+
+      const updatedRow = { 
+        ...row, 
+        [field]: value,
+        isManualContainerCount: isManual,
+        error: ''
+      };
+
+      // Auto-calculate container count if volume or container type changes
+      if (field === 'volume' || field === 'containerType') {
+        if (!isManual) {
+          const vol = parseFloat(updatedRow.volume);
+          if (!isNaN(vol) && vol > 0) {
+            const capacity = containerCapacities[updatedRow.containerType];
+            if (capacity) {
+              updatedRow.containerCount = Math.ceil(vol / capacity);
+            } else {
+              updatedRow.containerCount = 1;
+            }
+          } else {
+            updatedRow.containerCount = '';
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        [id]: updatedRow
+      };
+    });
+  };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -375,8 +437,20 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
     setSuccessMsg('');
 
     // Field checks
-    if (!gender || !age || selectedSpecimenIds.length === 0 || !sampleVolume) {
+    if (!gender || !age || selectedSpecimenIds.length === 0) {
       setError("Please complete all required subject and specimen characteristics.");
+      return;
+    }
+
+    const numericAge = parseInt(age, 10);
+    if (isNaN(numericAge) || numericAge < 0 || numericAge > 120) {
+      setError("Please enter a valid age between 0 and 120.");
+      return;
+    }
+
+    // Validate consent template selection
+    if (selectedTemplateIds.length === 0) {
+      setError("Consent Type must be selected before sample submission.");
       return;
     }
 
@@ -390,10 +464,44 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       setError("Please provide a custom specimen description for 'Other' type.");
       return;
     }
-    
-    // Validate consent template selection
-    if (selectedTemplateIds.length === 0) {
-      setError("Consent Type must be selected before sample submission.");
+
+    // Validate each selected specimen type details
+    let isDetailsValid = true;
+    const updatedDetails = { ...specimenDetails };
+
+    selectedSpecimenIds.forEach(id => {
+      const detail = updatedDetails[id];
+      if (!detail) {
+        isDetailsValid = false;
+        return;
+      }
+
+      let rowError = '';
+      const vol = parseFloat(detail.volume);
+      if (!detail.volume || isNaN(vol) || vol <= 0) {
+        rowError = "Volume must be greater than 0.";
+      } else if (!detail.unit) {
+        rowError = "Unit is required.";
+      } else if (!detail.containerType) {
+        rowError = "Container type is required.";
+      } else {
+        const count = parseInt(detail.containerCount, 10);
+        if (!detail.containerCount || isNaN(count) || count <= 0 || count !== parseFloat(detail.containerCount)) {
+          rowError = "Container count must be a positive integer.";
+        }
+      }
+
+      if (rowError) {
+        updatedDetails[id] = { ...detail, error: rowError };
+        isDetailsValid = false;
+      } else {
+        updatedDetails[id] = { ...detail, error: '' };
+      }
+    });
+
+    if (!isDetailsValid) {
+      setSpecimenDetails(updatedDetails);
+      setError("Please resolve the validation errors in the specimen details table.");
       return;
     }
 
@@ -405,6 +513,8 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
         const selectedST = specimenTypes.find(st => String(st.id) === String(specId));
         const isOther = selectedST && (selectedST.specimen_code === 'OTH' || selectedST.specimen_name === 'Other');
         const finalSpecimenType = isOther ? customSpecimenName.trim() : (selectedST ? selectedST.specimen_name : '');
+
+        const detail = specimenDetails[specId] || {};
 
         const sampleResponse = await fetch(`${backendUrl}/api/samples/register`, {
           method: 'POST',
@@ -419,9 +529,9 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
             age,
             specimen_type_id: parseInt(specId, 10),
             specimen_type: finalSpecimenType,
-            sample_volume: sampleVolume,
-            container_type: containerType,
-            container_count: containerCount,
+            sample_volume: parseFloat(detail.volume),
+            container_type: detail.containerType,
+            container_count: parseInt(detail.containerCount, 10),
             consent_template_id: selectedTemplateIds[0] || '',
             consent_template_ids: selectedTemplateIds
           })
@@ -456,13 +566,11 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       setSelectedTemplateIds([]);
       setSelectedSpecimenIds([]);
       setSearchQuery('');
-      setSampleVolume('');
       setSubjectId('SUBJ-' + Math.random().toString(36).substring(2, 8).toUpperCase());
-      setContainerType('Tube');
-      setContainerCount(1);
-      setIsManualContainerCount(false);
       setCustomSpecimenName('');
       setSpecimenSearchQuery('');
+      setSpecimenDetails({});
+      
       if (specimenTypes && specimenTypes.length > 0) {
         const blood = specimenTypes.find(st => st.specimen_name === 'Blood');
         if (blood) {
@@ -808,6 +916,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
                           return (
                             <div
                               key={t.template_id}
+                              className="consent-option-item"
                               onClick={() => {
                                 const strId = String(t.template_id);
                                 setSelectedTemplateIds(prev => 
@@ -945,176 +1054,158 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
             Section B: Specimen Information
           </legend>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
-            <div className="form-group" style={{ marginBottom: 0, position: 'relative' }} ref={specimenDropdownRef}>
-              <label htmlFor="specimen-type-select" style={{ fontWeight: '700' }}>Specimen Type *</label>
-              
-              {selectedSpecimenIds.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px', marginTop: '4px' }}>
-                  {selectedSpecimenIds.map(id => {
-                    const st = specimenTypes.find(temp => String(temp.id) === String(id));
-                    if (!st) return null;
-                    return (
-                      <span 
-                        key={id} 
+          <div className="form-group" style={{ marginBottom: 0, position: 'relative' }} ref={specimenDropdownRef}>
+            <label htmlFor="specimen-type-select" style={{ fontWeight: '700' }}>Specimen Type *</label>
+            
+            {selectedSpecimenIds.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px', marginTop: '4px' }}>
+                {selectedSpecimenIds.map(id => {
+                  const st = specimenTypes.find(temp => String(temp.id) === String(id));
+                  if (!st) return null;
+                  return (
+                    <span 
+                      key={id} 
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                        border: '1px solid rgba(6, 182, 212, 0.3)',
+                        borderRadius: '16px',
+                        fontSize: '11px',
+                        color: 'var(--accent-cyan)',
+                        fontWeight: '600'
+                      }}
+                    >
+                      {st.specimen_name}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSpecimenIds(prev => prev.filter(item => item !== String(id)));
+                        }}
                         style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          padding: '4px 10px',
-                          backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                          border: '1px solid rgba(6, 182, 212, 0.3)',
-                          borderRadius: '16px',
-                          fontSize: '11px',
+                          background: 'none',
+                          border: 'none',
                           color: 'var(--accent-cyan)',
-                          fontWeight: '600'
+                          cursor: 'pointer',
+                          padding: 0,
+                          fontSize: '14px',
+                          display: 'inline-flex',
+                          alignItems: 'center'
                         }}
                       >
-                        {st.specimen_name}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedSpecimenIds(prev => prev.filter(item => item !== String(id)));
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--accent-cyan)',
-                            cursor: 'pointer',
-                            padding: 0,
-                            fontSize: '14px',
-                            display: 'inline-flex',
-                            alignItems: 'center'
-                          }}
-                        >
-                          &times;
-                        </button>
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
+                        &times;
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
 
-              <input
-                type="text"
-                id="specimen-type-select"
-                className="form-control"
-                placeholder={selectedSpecimenIds.length > 0 ? "Search/select more specimen types..." : "[ Select Specimen Type(s) ▼ ]"}
-                value={specimenSearchQuery}
-                onChange={(e) => {
-                  setSpecimenSearchQuery(e.target.value);
-                  setShowSpecimenDropdown(true);
-                }}
-                onFocus={() => {
-                  setShowSpecimenDropdown(true);
-                }}
-              />
-              {showSpecimenDropdown && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  zIndex: 1000,
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--border-radius-sm)',
-                  maxHeight: '220px',
-                  overflowY: 'auto',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                  marginTop: '4px'
-                }}>
-                  {(() => {
-                    const filtered = specimenTypes.filter(st => 
-                      st.specimen_name.toLowerCase().includes(specimenSearchQuery.toLowerCase())
-                    );
-                    const grouped = {};
-                    filtered.forEach(st => {
-                      if (!grouped[st.category]) grouped[st.category] = [];
-                      grouped[st.category].push(st);
-                    });
+            <input
+              type="text"
+              id="specimen-type-select"
+              className="form-control"
+              placeholder={selectedSpecimenIds.length > 0 ? "Search/select more specimen types..." : "[ Select Specimen Type(s) ▼ ]"}
+              value={specimenSearchQuery}
+              onChange={(e) => {
+                setSpecimenSearchQuery(e.target.value);
+                setShowSpecimenDropdown(true);
+              }}
+              onFocus={() => {
+                setShowSpecimenDropdown(true);
+              }}
+            />
+            {showSpecimenDropdown && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                zIndex: 1000,
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--border-radius-sm)',
+                maxHeight: '220px',
+                overflowY: 'auto',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                marginTop: '4px'
+              }}>
+                {(() => {
+                  const filtered = specimenTypes.filter(st => 
+                    st.specimen_name.toLowerCase().includes(specimenSearchQuery.toLowerCase())
+                  );
+                  const grouped = {};
+                  filtered.forEach(st => {
+                    if (!grouped[st.category]) grouped[st.category] = [];
+                    grouped[st.category].push(st);
+                  });
 
-                    if (filtered.length === 0) {
-                      return (
-                        <div style={{ padding: '10px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
-                          No matching specimen types found
-                        </div>
-                      );
-                    }
-
-                    return Object.keys(grouped).map(cat => (
-                      <div key={cat}>
-                        <div style={{
-                          padding: '6px 12px',
-                          fontSize: '10px',
-                          fontWeight: '700',
-                          color: 'var(--accent-cyan)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                          backgroundColor: 'rgba(255,255,255,0.02)',
-                          borderBottom: '1px solid rgba(255,255,255,0.02)'
-                        }}>
-                          {cat}
-                        </div>
-                        {grouped[cat].map(st => {
-                          const isSelected = selectedSpecimenIds.includes(String(st.id));
-                          return (
-                            <div
-                              key={st.id}
-                              onClick={() => {
-                                const strId = String(st.id);
-                                setSelectedSpecimenIds(prev => 
-                                  prev.includes(strId)
-                                    ? prev.filter(id => id !== strId)
-                                    : [...prev, strId]
-                                );
-                                setSpecimenSearchQuery('');
-                              }}
-                              style={{
-                                padding: '8px 16px',
-                                cursor: 'pointer',
-                                fontSize: '13px',
-                                backgroundColor: isSelected ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
-                                color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = 'rgba(6, 182, 212, 0.1)';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = isSelected ? 'rgba(6, 182, 212, 0.15)' : 'transparent';
-                              }}
-                            >
-                              <span>{st.specimen_name}</span>
-                              {isSelected && <span style={{ fontWeight: 'bold' }}>✓</span>}
-                            </div>
-                          );
-                        })}
+                  if (filtered.length === 0) {
+                    return (
+                      <div style={{ padding: '10px', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+                        No matching specimen types found
                       </div>
-                    ));
-                  })()}
-                </div>
-              )}
-            </div>
+                    );
+                  }
 
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="specimen-volume">Sample Volume (mL) *</label>
-              <input
-                type="number"
-                id="specimen-volume"
-                className="form-control"
-                required
-                step="0.1"
-                min="0.1"
-                placeholder="e.g. 5.0"
-                value={sampleVolume}
-                onChange={(e) => setSampleVolume(e.target.value)}
-              />
-              <div className="invalid-feedback">Volume greater than 0 is required.</div>
-            </div>
+                  return Object.keys(grouped).map(cat => (
+                    <div key={cat}>
+                      <div style={{
+                        padding: '6px 12px',
+                        fontSize: '10px',
+                        fontWeight: '700',
+                        color: 'var(--accent-cyan)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        backgroundColor: 'rgba(255,255,255,0.02)',
+                        borderBottom: '1px solid rgba(255,255,255,0.02)'
+                      }}>
+                        {cat}
+                      </div>
+                      {grouped[cat].map(st => {
+                        const isSelected = selectedSpecimenIds.includes(String(st.id));
+                        return (
+                          <div
+                            key={st.id}
+                            onClick={() => {
+                              const strId = String(st.id);
+                              setSelectedSpecimenIds(prev => 
+                                prev.includes(strId)
+                                  ? prev.filter(id => id !== strId)
+                                  : [...prev, strId]
+                              );
+                              setSpecimenSearchQuery('');
+                            }}
+                            style={{
+                              padding: '8px 16px',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              backgroundColor: isSelected ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
+                              color: isSelected ? 'var(--accent-cyan)' : 'var(--text-primary)',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = 'rgba(6, 182, 212, 0.1)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = isSelected ? 'rgba(6, 182, 212, 0.15)' : 'transparent';
+                            }}
+                          >
+                            <span>{st.specimen_name}</span>
+                            {isSelected && <span style={{ fontWeight: 'bold' }}>✓</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
           </div>
 
           {(() => {
@@ -1141,45 +1232,104 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
             return null;
           })()}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginTop: '18px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="container-type">Container Type *</label>
-              <select
-                id="container-type"
-                className="form-control"
-                required
-                value={containerType}
-                onChange={(e) => {
-                  setContainerType(e.target.value);
-                  setIsManualContainerCount(false);
-                }}
-              >
-                <option value="Tube">Tube (Capacity: 4 mL)</option>
-                <option value="Vial">Vial (Capacity: 2 mL)</option>
-                <option value="Jar">Jar (Capacity: 50 mL)</option>
-                <option value="Bottle">Bottle (Capacity: 250 mL)</option>
-              </select>
+          {selectedSpecimenIds.length > 0 && (
+            <div className="table-container" style={{ overflowX: 'auto', marginTop: '14px' }}>
+              <table className="custom-table" style={{ width: '100%', minWidth: '650px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '25%' }}>Specimen Type</th>
+                    <th style={{ width: '20%' }}>Sample Volume *</th>
+                    <th style={{ width: '15%' }}>Unit *</th>
+                    <th style={{ width: '25%' }}>Container Type *</th>
+                    <th style={{ width: '15%' }}>Container Count *</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedSpecimenIds.map(id => {
+                    const st = specimenTypes.find(temp => String(temp.id) === String(id));
+                    if (!st) return null;
+                    const isOther = st.specimen_code === 'OTH' || st.specimen_name === 'Other';
+                    const displayName = isOther 
+                      ? `Other (${customSpecimenName || 'Custom'})`
+                      : st.specimen_name;
+                    const detail = specimenDetails[id] || {};
+                    return (
+                      <React.Fragment key={id}>
+                        <tr>
+                          <td style={{ verticalAlign: 'middle', fontWeight: '600' }}>
+                            {displayName}
+                          </td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              className="form-control"
+                              style={{ width: '100%', padding: '8px' }}
+                              placeholder="e.g. 5.00"
+                              required
+                              value={detail.volume || ''}
+                              onChange={(e) => updateSpecimenDetail(id, 'volume', e.target.value)}
+                            />
+                          </td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <select
+                              className="form-control"
+                              style={{ width: '100%', padding: '8px' }}
+                              required
+                              value={detail.unit || 'mL'}
+                              onChange={(e) => updateSpecimenDetail(id, 'unit', e.target.value)}
+                            >
+                              <option value="mL">mL</option>
+                            </select>
+                          </td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <select
+                              className="form-control"
+                              style={{ width: '100%', padding: '8px' }}
+                              required
+                              value={detail.containerType || 'Tube'}
+                              onChange={(e) => updateSpecimenDetail(id, 'containerType', e.target.value)}
+                            >
+                              <option value="Tube">Tube (Capacity: 4 mL)</option>
+                              <option value="Vial">Vial (Capacity: 2 mL)</option>
+                              <option value="2 mL Cryovial">2 mL Cryovial (Capacity: 2 mL)</option>
+                              <option value="Jar">Jar (Capacity: 50 mL)</option>
+                              <option value="Bottle">Bottle (Capacity: 250 mL)</option>
+                            </select>
+                          </td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <input
+                                type="number"
+                                min="1"
+                                step="1"
+                                className="form-control"
+                                style={{ width: '100%', padding: '8px' }}
+                                required
+                                value={detail.containerCount || ''}
+                                onChange={(e) => updateSpecimenDetail(id, 'containerCount', e.target.value)}
+                              />
+                              <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', display: 'block' }}>
+                                {detail.isManualContainerCount ? '✏️ Manually adjusted' : '⚡ Auto-calculated'}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {detail.error && (
+                          <tr>
+                            <td colSpan="5" style={{ padding: '6px 16px 12px 16px', borderTop: 'none', color: 'var(--accent-error)', fontSize: '12px', fontWeight: '500' }}>
+                              ⚠️ {detail.error}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="container-count">Container Count *</label>
-              <input
-                type="number"
-                id="container-count"
-                className="form-control"
-                required
-                min="1"
-                value={containerCount}
-                onChange={(e) => {
-                  setContainerCount(parseInt(e.target.value, 10) || 1);
-                  setIsManualContainerCount(true);
-                }}
-              />
-              <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px', display: 'block' }}>
-                {isManualContainerCount ? '✏️ Manually adjusted' : '⚡ Auto-calculated based on volume'}
-              </span>
-            </div>
-          </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px', marginTop: '18px' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
