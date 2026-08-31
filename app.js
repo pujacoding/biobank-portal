@@ -149,6 +149,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Populate LIMS login selector and bind events
   await initLoginPortal();
 
+  // Detect if this is a fresh navigation (not a page reload or back/forward movement).
+  // Browsers restore sessionStorage on tab/window restore (e.g. Ctrl+Shift+T or restarting browser with open tabs),
+  // so we clear it if the navigation is a fresh load to force user re-login.
+  const navEntries = typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
+    ? performance.getEntriesByType('navigation')
+    : [];
+  const isReloadOrBack = navEntries.length > 0 && (navEntries[0].type === 'reload' || navEntries[0].type === 'back_forward');
+  if (!isReloadOrBack) {
+    sessionStorage.removeItem('aura_logged_in');
+    sessionStorage.removeItem('aura_current_user');
+  }
+
   // Restore user session or fall back to login screen (stored in sessionStorage for tab-level lifecycle)
   const isLoggedIn = sessionStorage.getItem('aura_logged_in');
   const savedUserJson = sessionStorage.getItem('aura_current_user');
