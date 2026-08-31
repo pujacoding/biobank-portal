@@ -149,9 +149,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Populate LIMS login selector and bind events
   await initLoginPortal();
 
-  // Restore user session or fall back to login screen if they logged out
-  const isLoggedIn = localStorage.getItem('aura_logged_in');
-  const savedUserJson = localStorage.getItem('aura_current_user');
+  // Restore user session or fall back to login screen (stored in sessionStorage for tab-level lifecycle)
+  const isLoggedIn = sessionStorage.getItem('aura_logged_in');
+  const savedUserJson = sessionStorage.getItem('aura_current_user');
   
   if (isLoggedIn === 'true' && savedUserJson) {
     try {
@@ -167,22 +167,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentUser = null;
       document.body.classList.remove('authenticated');
     }
-  } else if (isLoggedIn === 'false') {
-    // Explicitly logged out, show the login portal
+  } else {
+    // Show login screen by default
     currentUser = null;
     document.body.classList.remove('authenticated');
-  } else {
-    // Default fallback or first time: auto-authenticate as Alexander Scott (Research Staff) from SQLite
-    currentUser = { id: 3, username: 'Alexander Scott', role: 'Research Staff', status: 'Active' };
-    localStorage.setItem('aura_logged_in', 'true');
-    localStorage.setItem('aura_current_user', JSON.stringify(currentUser));
-    document.body.classList.add('authenticated');
-    updateProfileUI(currentUser);
-    updateAdminMenuVisibility(currentUser.role);
-    updateRequestsBadge();
-    
-    const userTheme = localStorage.getItem('aura_theme_Alexander Scott') || localStorage.getItem('aura_theme') || 'system';
-    applyTheme(userTheme);
   }
   
   const dashBtn = document.querySelector('.nav-btn[data-tab="dashboard-tab"]');
@@ -329,7 +317,7 @@ function initThemeManager() {
       if (currentUser) {
         localStorage.setItem('aura_theme_' + currentUser.username, selectedTheme);
         currentUser.theme = selectedTheme;
-        localStorage.setItem('aura_current_user', JSON.stringify(currentUser));
+        sessionStorage.setItem('aura_current_user', JSON.stringify(currentUser));
         db.updateUserTheme(currentUser.id, selectedTheme).catch(console.error);
       }
       applyTheme(selectedTheme);
@@ -4320,8 +4308,8 @@ async function initLoginPortal() {
     const authUser = usersCache.find(u => String(u.id) === String(selectedUid));
     if (authUser && authUser.password === password) {
       currentUser = authUser;
-      localStorage.setItem('aura_logged_in', 'true');
-      localStorage.setItem('aura_current_user', JSON.stringify(authUser));
+      sessionStorage.setItem('aura_logged_in', 'true');
+      sessionStorage.setItem('aura_current_user', JSON.stringify(authUser));
       
       const userTheme = authUser.theme || localStorage.getItem('aura_theme_' + authUser.username) || localStorage.getItem('aura_theme') || 'system';
       applyTheme(userTheme);
@@ -4362,8 +4350,8 @@ async function performLogout() {
     });
   }
   
-  localStorage.setItem('aura_logged_in', 'false');
-  localStorage.removeItem('aura_current_user');
+  sessionStorage.setItem('aura_logged_in', 'false');
+  sessionStorage.removeItem('aura_current_user');
   currentUser = null;
   document.body.classList.remove('authenticated');
   updateAdminMenuVisibility(null);
