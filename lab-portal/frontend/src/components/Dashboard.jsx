@@ -20,7 +20,7 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ba
     const fetchDashboardStats = async () => {
       if (!token || !backendUrl) return;
       try {
-        const activeLab = localStorage.getItem('aura_active_lab_id');
+        const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
         const response = await fetch(`${backendUrl}/api/samples/dashboard-stats`, {
           headers: {
             'Authorization': `Bearer ${token}`,

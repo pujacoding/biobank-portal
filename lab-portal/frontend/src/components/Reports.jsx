@@ -390,7 +390,7 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      const activeLab = localStorage.getItem('aura_active_lab_id');
+      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const queryParams = new URLSearchParams({
         page,
         pageSize: 10,

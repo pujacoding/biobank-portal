@@ -19,8 +19,16 @@ import Reports from './components/Reports';
 const BACKEND_URL = API_BASE_URL;
 
 export default function App() {
-  const [token, setToken] = useState(localStorage.getItem('aura_lab_token') || null);
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem('aura_lab_user')) || null);
+  const [token, setToken] = useState(() => {
+    // Purge legacy persistent localStorage auth tokens
+    localStorage.removeItem('aura_lab_token');
+    localStorage.removeItem('aura_lab_user');
+    return sessionStorage.getItem('aura_lab_token') || null;
+  });
+  const [user, setUser] = useState(() => {
+    const saved = sessionStorage.getItem('aura_lab_user');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [activeTab, setActiveTab] = useState('dashboard');
   const [samples, setSamples] = useState([]);
   const [globalTotal, setGlobalTotal] = useState(0);
@@ -35,18 +43,18 @@ export default function App() {
   // Active Lab Context States
   const [accessibleLabs, setAccessibleLabs] = useState([]);
   const [activeLabId, setActiveLabId] = useState(() => {
-    const savedUser = JSON.parse(localStorage.getItem('aura_lab_user'));
+    const savedUser = JSON.parse(sessionStorage.getItem('aura_lab_user') || 'null');
     if (savedUser && savedUser.lab_id !== null && savedUser.lab_id !== undefined) {
       return savedUser.lab_id;
     }
-    return localStorage.getItem('aura_active_lab_id') || '';
+    return sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id') || '';
   });
   const [activeLabName, setActiveLabName] = useState(() => {
-    const savedUser = JSON.parse(localStorage.getItem('aura_lab_user'));
+    const savedUser = JSON.parse(sessionStorage.getItem('aura_lab_user') || 'null');
     if (savedUser && savedUser.lab_id !== null && savedUser.lab_id !== undefined) {
       return savedUser.lab_name || '';
     }
-    return localStorage.getItem('aura_active_lab_name') || '';
+    return sessionStorage.getItem('aura_active_lab_name') || localStorage.getItem('aura_active_lab_name') || '';
   });
 
   const hasPermission = (permissionName) => {
@@ -61,6 +69,10 @@ export default function App() {
       const response = await fetch(`${BACKEND_URL}/api/users/labs/accessible`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
+      if (response.status === 401 || response.status === 403) {
+        handleLogout();
+        return;
+      }
       const data = await response.json();
       if (response.ok) {
         setAccessibleLabs(data.labs || []);
@@ -80,7 +92,7 @@ export default function App() {
 
   const handleGenerateAndPrintBarcode = async (sampleId) => {
     try {
-      const activeLab = localStorage.getItem('aura_active_lab_id');
+      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const response = await fetch(`${BACKEND_URL}/api/barcode/generate`, {
         method: 'POST',
         headers: {
@@ -129,13 +141,17 @@ export default function App() {
     if (!authToken) return;
     setLoadingSamples(true);
     try {
-      const activeLab = localStorage.getItem('aura_active_lab_id');
+      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const response = await fetch(`${BACKEND_URL}/api/samples`, {
         headers: { 
           'Authorization': `Bearer ${authToken}`,
           ...(activeLab ? { 'x-active-lab-id': activeLab } : {})
         }
       });
+      if (response.status === 401 || response.status === 403) {
+        handleLogout();
+        return;
+      }
       const data = await response.json();
       if (response.ok) {
         setSamples(data.samples || []);
@@ -159,15 +175,19 @@ export default function App() {
   const handleLoginSuccess = (newToken, newUser) => {
     setToken(newToken);
     setUser(newUser);
-    localStorage.setItem('aura_lab_token', newToken);
-    localStorage.setItem('aura_lab_user', JSON.stringify(newUser));
+    sessionStorage.setItem('aura_lab_token', newToken);
+    sessionStorage.setItem('aura_lab_user', JSON.stringify(newUser));
+    localStorage.removeItem('aura_lab_token');
+    localStorage.removeItem('aura_lab_user');
     // If the user has a specific assigned lab, auto-set it as active
     if (newUser.lab_id !== null && newUser.lab_id !== undefined) {
       setActiveLabId(newUser.lab_id);
       setActiveLabName(newUser.lab_name);
-      localStorage.setItem('aura_active_lab_id', newUser.lab_id);
-      localStorage.setItem('aura_active_lab_name', newUser.lab_name);
+      sessionStorage.setItem('aura_active_lab_id', newUser.lab_id);
+      sessionStorage.setItem('aura_active_lab_name', newUser.lab_name);
     } else {
+      sessionStorage.removeItem('aura_active_lab_id');
+      sessionStorage.removeItem('aura_active_lab_name');
       localStorage.removeItem('aura_active_lab_id');
       localStorage.removeItem('aura_active_lab_name');
       setActiveLabId('');
@@ -177,10 +197,15 @@ export default function App() {
     fetchAccessibleLabs(newToken);
   };
 
-  const handleLogout = () => {
+  const handleLogout = (skipBroadcast = false) => {
+    const isRemote = skipBroadcast === true;
     setToken(null);
     setUser(null);
     setSamples([]);
+    sessionStorage.removeItem('aura_lab_token');
+    sessionStorage.removeItem('aura_lab_user');
+    sessionStorage.removeItem('aura_active_lab_id');
+    sessionStorage.removeItem('aura_active_lab_name');
     localStorage.removeItem('aura_lab_token');
     localStorage.removeItem('aura_lab_user');
     localStorage.removeItem('aura_active_lab_id');
@@ -188,7 +213,42 @@ export default function App() {
     setActiveLabId('');
     setActiveLabName('');
     setActiveTab('dashboard');
+
+    if (!isRemote) {
+      try {
+        const channel = new BroadcastChannel('aura_lab_auth_channel');
+        channel.postMessage({ type: 'LAB_LOGOUT', timestamp: Date.now() });
+      } catch (e) {}
+      try {
+        localStorage.setItem('aura_lab_logout_timestamp', String(Date.now()));
+      } catch (e) {}
+    }
   };
+
+  // Multi-tab real-time logout synchronization
+  useEffect(() => {
+    let channel;
+    try {
+      channel = new BroadcastChannel('aura_lab_auth_channel');
+      channel.onmessage = (event) => {
+        if (event.data && event.data.type === 'LAB_LOGOUT') {
+          handleLogout(true);
+        }
+      };
+    } catch (e) {}
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'aura_lab_logout_timestamp') {
+        handleLogout(true);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      if (channel) channel.close();
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
 
   const toggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
@@ -797,7 +857,7 @@ export default function App() {
           </div>
           <button 
             className="btn btn-secondary" 
-            onClick={handleLogout} 
+            onClick={() => handleLogout(false)} 
             style={{ 
               width: '100%', 
               padding: sidebarCollapsed ? '8px 0' : '8px',
@@ -859,9 +919,13 @@ export default function App() {
                   setActiveLabId(id);
                   setActiveLabName(name);
                   if (id) {
-                    localStorage.setItem('aura_active_lab_id', id);
-                    localStorage.setItem('aura_active_lab_name', name);
+                    sessionStorage.setItem('aura_active_lab_id', id);
+                    sessionStorage.setItem('aura_active_lab_name', name);
+                    localStorage.removeItem('aura_active_lab_id');
+                    localStorage.removeItem('aura_active_lab_name');
                   } else {
+                    sessionStorage.removeItem('aura_active_lab_id');
+                    sessionStorage.removeItem('aura_active_lab_name');
                     localStorage.removeItem('aura_active_lab_id');
                     localStorage.removeItem('aura_active_lab_name');
                     setActiveLabId('');

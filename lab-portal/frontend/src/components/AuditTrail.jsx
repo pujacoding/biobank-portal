@@ -24,7 +24,7 @@ export default function AuditTrail({ backendUrl, token, user, activeLabId, activ
     setLoading(true);
     setError('');
     try {
-      const activeLab = localStorage.getItem('aura_active_lab_id');
+      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const response = await fetch(`${backendUrl}/api/audit`, {
         headers: { 
           'Authorization': `Bearer ${token}`,

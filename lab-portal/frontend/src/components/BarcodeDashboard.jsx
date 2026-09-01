@@ -67,7 +67,7 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
     setLoading(true);
     setError('');
     try {
-      const activeLab = localStorage.getItem('aura_active_lab_id');
+      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       // 1. Fetch metrics
       const metricsResponse = await fetch(`${backendUrl}/api/barcode/dashboard`, {
         headers: { 
@@ -125,7 +125,7 @@ export default function BarcodeDashboard({ samples, backendUrl, token, user, onP
     setLoading(true);
 
     try {
-      const activeLab = localStorage.getItem('aura_active_lab_id');
+      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const response = await fetch(`${backendUrl}/api/barcode/generate`, {
         method: 'POST',
         headers: {

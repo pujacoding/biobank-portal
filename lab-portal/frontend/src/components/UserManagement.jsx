@@ -108,7 +108,7 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
     setLoading(true);
     setError('');
     try {
-      const activeLab = localStorage.getItem('aura_active_lab_id');
+      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const customHeaders = {
         'Authorization': `Bearer ${token}`,
         ...(activeLab ? { 'x-active-lab-id': activeLab } : {})

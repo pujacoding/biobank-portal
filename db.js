@@ -614,9 +614,11 @@ class APIDB {
       'X-API-Key': this.apiKey,
       ...options.headers
     };
+    const signal = options.signal || (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(2500) : undefined);
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
-      headers
+      headers,
+      signal
     });
     const data = await response.json();
     if (!response.ok) {
@@ -626,13 +628,23 @@ class APIDB {
   }
 
   async getSpecimens() {
-    const data = await this.fetchApi('/catalog');
-    return data.specimens || [];
+    try {
+      const data = await this.fetchApi('/catalog');
+      return data.specimens || [];
+    } catch (err) {
+      console.warn("AURA DB: Failed to fetch specimens from API, falling back to empty list:", err.message);
+      return [];
+    }
   }
 
   async getDonors() {
-    const data = await this.fetchApi('/donors');
-    return data.donors || [];
+    try {
+      const data = await this.fetchApi('/donors');
+      return data.donors || [];
+    } catch (err) {
+      console.warn("AURA DB: Failed to fetch donors from API, falling back to empty list:", err.message);
+      return [];
+    }
   }
 
   async addSpecimen(specimen) {
@@ -706,31 +718,41 @@ class APIDB {
   }
 
   async getResearchRequests() {
-    const data = await this.fetchApi('/requests');
-    const requests = data.requests || [];
-    return requests.map(req => {
-      const specimensArray = (req.specimens || '')
-        .split(',')
-        .map(s => s.trim())
-        .filter(s => s.length > 0)
-        .map(barcode => ({ barcode }));
+    try {
+      const data = await this.fetchApi('/requests');
+      const requests = data.requests || [];
+      return requests.map(req => {
+        const specimensArray = (req.specimens || '')
+          .split(',')
+          .map(s => s.trim())
+          .filter(s => s.length > 0)
+          .map(barcode => ({ barcode }));
 
-      return {
-        requestId: req.id,
-        researcherName: req.researcher_name,
-        institution: req.institution,
-        irbCode: req.irb_code,
-        hypothesis: req.hypothesis,
-        samples: specimensArray,
-        status: req.status,
-        createdAt: req.created_at
-      };
-    });
+        return {
+          requestId: req.id,
+          researcherName: req.researcher_name,
+          institution: req.institution,
+          irbCode: req.irb_code,
+          hypothesis: req.hypothesis,
+          samples: specimensArray,
+          status: req.status,
+          createdAt: req.created_at
+        };
+      });
+    } catch (err) {
+      console.warn("AURA DB: Failed to fetch research requests from API:", err.message);
+      return [];
+    }
   }
 
   async getStudies() {
-    const data = await this.fetchApi('/studies');
-    return data.studies || [];
+    try {
+      const data = await this.fetchApi('/studies');
+      return data.studies || [];
+    } catch (err) {
+      console.warn("AURA DB: Failed to fetch studies from API:", err.message);
+      return [];
+    }
   }
 
   async addStudy(study) {
@@ -742,8 +764,13 @@ class APIDB {
   }
 
   async getPublications() {
-    const data = await this.fetchApi('/publications');
-    return data.publications || [];
+    try {
+      const data = await this.fetchApi('/publications');
+      return data.publications || [];
+    } catch (err) {
+      console.warn("AURA DB: Failed to fetch publications from API:", err.message);
+      return [];
+    }
   }
 
   async addPublication(pub) {
@@ -769,14 +796,24 @@ class APIDB {
   }
 
   async getStats() {
-    const data = await this.fetchApi('/stats');
-    return data.stats || {
-      totalSpecimens: 0,
-      totalDonors: 0,
-      totalRequests: 0,
-      totalStudies: 0,
-      totalPublications: 0
-    };
+    try {
+      const data = await this.fetchApi('/stats');
+      return data.stats || {
+        totalSpecimens: 0,
+        totalDonors: 0,
+        totalRequests: 0,
+        totalStudies: 0,
+        totalPublications: 0
+      };
+    } catch (err) {
+      return {
+        totalSpecimens: 0,
+        totalDonors: 0,
+        totalRequests: 0,
+        totalStudies: 0,
+        totalPublications: 0
+      };
+    }
   }
 
   async getBlockchainLedger() {
