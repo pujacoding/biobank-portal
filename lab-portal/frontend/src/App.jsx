@@ -69,8 +69,13 @@ export default function App() {
       const response = await fetch(`${BACKEND_URL}/api/users/labs/accessible`, {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
         handleLogout();
+        return;
+      }
+      if (response.status === 403) {
+        console.warn("User has restricted lab access.");
+        setAccessibleLabs([]);
         return;
       }
       const data = await response.json();
@@ -148,8 +153,14 @@ export default function App() {
           ...(activeLab ? { 'x-active-lab-id': activeLab } : {})
         }
       });
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
         handleLogout();
+        return;
+      }
+      if (response.status === 403) {
+        console.warn("User does not have sample viewing permissions or active lab is restricted.");
+        setSamples([]);
+        setGlobalTotal(0);
         return;
       }
       const data = await response.json();
