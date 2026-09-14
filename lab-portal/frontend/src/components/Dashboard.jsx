@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 
-export default function Dashboard({ samples, globalTotal, setActiveTab, user, backendUrl, token }) {
+export default function Dashboard({ samples, globalTotal, setActiveTab, user, activeLabId, activeLabName, backendUrl, token }) {
   const [stats, setStats] = useState({
     totalSamples: 0,
     todayCollection: 0,
     storedSamples: 0,
     releasedSamples: 0,
     disposedSamples: 0,
-    availableStorage: 500,
+    availableStorage: 0,
+    totalCapacity: 0,
     researchProjects: 0,
     tempAlerts: 0
   });
@@ -20,7 +21,7 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ba
     const fetchDashboardStats = async () => {
       if (!token || !backendUrl) return;
       try {
-        const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
+        const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id') || activeLabId;
         const response = await fetch(`${backendUrl}/api/samples/dashboard-stats`, {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -39,7 +40,7 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ba
     };
 
     fetchDashboardStats();
-  }, [backendUrl, token, samples]);
+  }, [backendUrl, token, samples, activeLabId]);
 
   // Last 5 samples for the recent registrations table
   const recentSamples = samples.slice(0, 5);
@@ -51,7 +52,7 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ba
           Welcome back, <span className="title-gradient">{user.name}</span>
         </h1>
         <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-          Ingestion overview for <strong style={{ color: 'var(--text-primary)' }}>{user.lab_name}</strong> &bull; {user.lab_location || 'Central Facility'}
+          Ingestion overview for <strong style={{ color: 'var(--text-primary)' }}>{activeLabName || user.lab_name || (user?.role === 'Super Admin' ? 'Global Biobank Network' : 'Personal Workspace')}</strong> &bull; {user.lab_location || (activeLabName || user.lab_name ? 'Central Facility' : 'Demo Workspace')}
         </p>
       </div>
 
@@ -204,7 +205,14 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ba
           </div>
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available Storage</span>
-            <h3 style={{ fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.availableStorage} <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>/ 500</span></h3>
+            <h3 style={{ fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>
+              {stats.availableStorage}
+              {stats.totalCapacity ? (
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}> / {stats.totalCapacity}</span>
+              ) : (
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}> / 0</span>
+              )}
+            </h3>
           </div>
         </div>
 

@@ -217,8 +217,15 @@ export async function registerSample(req, res, next) {
  */
 export async function getSamples(req, res, next) {
   try {
-    const userCheck = await query("SELECT role_id FROM users WHERE id = $1", [req.user.userId]);
-    const userRoleId = parseInt(userCheck.rows[0]?.role_id, 10);
+    const userCheck = await query("SELECT role_id, email, name FROM users WHERE id = $1", [req.user.userId]);
+    const userRow = userCheck.rows[0];
+    const userRoleId = parseInt(userRow?.role_id, 10);
+    const isSuperAdmin = req.user.role === 'Super Admin' || userRoleId === 1;
+    const isDemoUser = Boolean(
+      (userRow?.email && userRow.email.toLowerCase().includes('demo')) ||
+      (userRow?.name && userRow.name.toLowerCase().includes('demo')) ||
+      (req.user?.email && req.user.email.toLowerCase().includes('demo'))
+    );
 
     let sql = `
       SELECT s.*, 
@@ -256,11 +263,30 @@ export async function getSamples(req, res, next) {
     `;
     const params = [];
 
-    // RBAC check: Collection staff see their own, laboratory members see lab-scoped, superadmin sees all
-    if (userRoleId === 4) {
-      sql += " WHERE s.lab_id = $1 AND s.collector_id = $2";
-      params.push(req.user.labId, req.user.userId);
-    } else if (req.user.labId && req.user.role !== 'Super Admin') {
+    // RBAC & Demo Scoping
+    if (isDemoUser) {
+      // Demo user: only see samples registered by this demo user
+      sql += " WHERE s.collector_id = $1";
+      params.push(req.user.userId);
+    } else if (userRoleId === 4) {
+      // Collection staff: see their own collections
+      if (req.user.labId) {
+        sql += " WHERE s.lab_id = $1 AND s.collector_id = $2";
+        params.push(req.user.labId, req.user.userId);
+      } else {
+        sql += " WHERE s.collector_id = $1";
+        params.push(req.user.userId);
+      }
+    } else if (req.user.labId && !isSuperAdmin) {
+      // Lab members: lab-scoped
+      sql += " WHERE s.lab_id = $1";
+      params.push(req.user.labId);
+    } else if (!req.user.labId && !isSuperAdmin) {
+      // Unassigned non-superadmin: see only own registered samples
+      sql += " WHERE s.collector_id = $1";
+      params.push(req.user.userId);
+    } else if (req.user.labId && isSuperAdmin) {
+      // Super Admin with active lab filter
       sql += " WHERE s.lab_id = $1";
       params.push(req.user.labId);
     }
@@ -268,8 +294,7 @@ export async function getSamples(req, res, next) {
     sql += " ORDER BY s.created_at DESC";
 
     const result = await query(sql, params);
-    const globalCountRes = await query("SELECT COUNT(*) as count FROM samples");
-    const globalTotal = parseInt(globalCountRes.rows[0].count, 10);
+    const globalTotal = result.rows.length;
 
     res.json({
       success: true,
@@ -340,49 +365,92 @@ export async function getPublicSample(req, res, next) {
  */
 export async function getDashboardStats(req, res, next) {
   try {
+    const userCheck = await query("SELECT role_id, email, name FROM users WHERE id = $1", [req.user.userId]);
+    const userRow = userCheck.rows[0];
+    const userRoleId = parseInt(userRow?.role_id, 10);
+    const isSuperAdmin = req.user.role === 'Super Admin' || userRoleId === 1;
+    const isDemoUser = Boolean(
+      (userRow?.email && userRow.email.toLowerCase().includes('demo')) ||
+      (userRow?.name && userRow.name.toLowerCase().includes('demo')) ||
+      (req.user?.email && req.user.email.toLowerCase().includes('demo'))
+    );
+
     const labId = req.user.labId;
-    const isSuperAdmin = req.user.role === 'Super Admin';
 
     let sampleFilter = "";
     const params = [];
-    if (labId && !isSuperAdmin) {
+
+    if (isDemoUser) {
+      // Demo user: only count samples created by this demo user
+      sampleFilter = " WHERE collector_id = $1";
+      params.push(req.user.userId);
+    } else if (userRoleId === 4) {
+      // Collection Staff: count their own collections
+      if (labId) {
+        sampleFilter = " WHERE lab_id = $1 AND collector_id = $2";
+        params.push(labId, req.user.userId);
+      } else {
+        sampleFilter = " WHERE collector_id = $1";
+        params.push(req.user.userId);
+      }
+    } else if (labId) {
+      // Lab-assigned or active lab selected
       sampleFilter = " WHERE lab_id = $1";
       params.push(labId);
+    } else if (!isSuperAdmin) {
+      // Non-superadmin with no lab assigned
+      sampleFilter = " WHERE collector_id = $1";
+      params.push(req.user.userId);
     }
+    // For Super Admin with no active lab, sampleFilter remains "" (global count)
 
     // 1. Total Samples
     const totalSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${sampleFilter}`, params);
-    const totalSamples = parseInt(totalSamplesRes.rows[0].count, 10);
+    const totalSamples = parseInt(totalSamplesRes.rows[0]?.count || 0, 10);
 
     // 2. Today's Collection
     const todayStr = new Date().toLocaleDateString('en-CA');
-    const todayFilter = sampleFilter ? `${sampleFilter} AND collection_date = $2` : " WHERE collection_date = $1";
+    const todayClause = `collection_date = $${params.length + 1}`;
+    const todayFilter = sampleFilter ? `${sampleFilter} AND ${todayClause}` : ` WHERE ${todayClause}`;
     const todayParams = [...params, todayStr];
     const todayCollectionRes = await query(`SELECT COUNT(*) as count FROM samples${todayFilter}`, todayParams);
-    const todayCollection = parseInt(todayCollectionRes.rows[0].count, 10);
+    const todayCollection = parseInt(todayCollectionRes.rows[0]?.count || 0, 10);
 
-    // 3. Stored Samples
-    const storedFilter = sampleFilter ? `${sampleFilter} AND (status = 'Stored' OR retrieval_status = 'Stored')` : " WHERE status = 'Stored' OR retrieval_status = 'Stored'";
+    // 3. Stored Samples: sample must have status = 'Stored' OR (has location and not disposed/released)
+    const storedClause = `(status = 'Stored' OR (location IS NOT NULL AND status NOT IN ('Disposed', 'Released', 'Retrieved') AND retrieval_status = 'Stored'))`;
+    const storedFilter = sampleFilter ? `${sampleFilter} AND ${storedClause}` : ` WHERE ${storedClause}`;
     const storedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${storedFilter}`, params);
-    const storedSamples = parseInt(storedSamplesRes.rows[0].count, 10);
+    const storedSamples = parseInt(storedSamplesRes.rows[0]?.count || 0, 10);
 
     // 4. Released Samples
-    const releasedFilter = sampleFilter ? `${sampleFilter} AND (status IN ('Released', 'Retrieved', 'Allocated') OR retrieval_status IN ('Released', 'Retrieved', 'Allocated'))` : " WHERE status IN ('Released', 'Retrieved', 'Allocated') OR retrieval_status IN ('Released', 'Retrieved', 'Allocated')";
+    const releasedClause = `(status IN ('Released', 'Retrieved', 'Allocated') OR retrieval_status IN ('Released', 'Retrieved', 'Allocated'))`;
+    const releasedFilter = sampleFilter ? `${sampleFilter} AND ${releasedClause}` : ` WHERE ${releasedClause}`;
     const releasedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${releasedFilter}`, params);
-    const releasedSamples = parseInt(releasedSamplesRes.rows[0].count, 10);
+    const releasedSamples = parseInt(releasedSamplesRes.rows[0]?.count || 0, 10);
 
     // 5. Disposed Samples
-    const disposedFilter = sampleFilter ? `${sampleFilter} AND (status = 'Disposed' OR retrieval_status = 'Disposed')` : " WHERE status = 'Disposed' OR retrieval_status = 'Disposed'";
+    const disposedClause = `(status = 'Disposed' OR retrieval_status = 'Disposed')`;
+    const disposedFilter = sampleFilter ? `${sampleFilter} AND ${disposedClause}` : ` WHERE ${disposedClause}`;
     const disposedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${disposedFilter}`, params);
-    const disposedSamples = parseInt(disposedSamplesRes.rows[0].count, 10);
+    const disposedSamples = parseInt(disposedSamplesRes.rows[0]?.count || 0, 10);
 
-    // 6. Available Storage (Total capacity of 500 minus currently stored)
-    const totalCapacity = 500;
-    const availableStorage = Math.max(0, totalCapacity - storedSamples);
+    // 6. Available Storage & Capacity
+    let totalCapacity = 0;
+    let availableStorage = 0;
+    if (isDemoUser) {
+      totalCapacity = 0;
+      availableStorage = 0;
+    } else if (labId || isSuperAdmin) {
+      totalCapacity = 500;
+      availableStorage = Math.max(0, totalCapacity - storedSamples);
+    }
 
     // 7. Research Projects (Total studies)
-    const researchProjectsRes = await query("SELECT COUNT(*) as count FROM studies");
-    const researchProjects = parseInt(researchProjectsRes.rows[0].count, 10);
+    let researchProjects = 0;
+    if (!isDemoUser) {
+      const researchProjectsRes = await query("SELECT COUNT(*) as count FROM studies");
+      researchProjects = parseInt(researchProjectsRes.rows[0]?.count || 0, 10);
+    }
 
     // 8. Temperature Alerts (Normally 0)
     const tempAlerts = 0;
@@ -396,6 +464,7 @@ export async function getDashboardStats(req, res, next) {
         releasedSamples,
         disposedSamples,
         availableStorage,
+        totalCapacity,
         researchProjects,
         tempAlerts
       }

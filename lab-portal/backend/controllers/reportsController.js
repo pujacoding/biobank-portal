@@ -23,10 +23,18 @@ function getPaginationParams(req) {
 // Helper to determine if we should filter by lab
 function getLabFilter(req) {
   const isSuperAdmin = req.user.role === 'Super Admin' || req.user.roleId === 1;
+  const isDemoUser = Boolean(
+    (req.user.email && req.user.email.toLowerCase().includes('demo')) ||
+    (req.user.name && req.user.name.toLowerCase().includes('demo'))
+  );
   const hasFilter = req.user && req.user.labId && !isSuperAdmin;
   return {
+    isSuperAdmin,
+    isDemoUser,
     hasFilter,
-    labId: hasFilter ? req.user.labId : null
+    labId: hasFilter ? req.user.labId : null,
+    userId: req.user.userId,
+    userName: req.user.name || ""
   };
 }
 
@@ -46,8 +54,27 @@ export async function getReportData(req, res, next) {
     let paramIndex = 1;
     let filterQueries = [];
 
-    // Apply lab context filter if applicable
-    if (labFilter.hasFilter) {
+    // Apply demo user / lab context filter
+    if (labFilter.isDemoUser) {
+      if (['subject-registration', 'sample-collection', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report', 'trace-specimen', 'collection-summary', 'collection-status', 'processing-status', 'processing-summary', 'inventory-status', 'qc-status', 'qc-summary'].includes(reportType)) {
+        filterQueries.push(`s.collector_id = $${paramIndex}`);
+        queryParams.push(labFilter.userId);
+        countParams.push(labFilter.userId);
+        paramIndex++;
+      } else if (['consent-report', 'consent-history'].includes(reportType)) {
+        filterQueries.push(`c.subject_id IN (SELECT subject_id FROM samples WHERE collector_id = $${paramIndex})`);
+        queryParams.push(labFilter.userId);
+        countParams.push(labFilter.userId);
+        paramIndex++;
+      } else if (['shipment-report', 'receiving-report', 'shipment-status', 'shipment-history'].includes(reportType)) {
+        filterQueries.push(`1 = 0`);
+      } else if (['audit-trail', 'user-sessions', 'inventory-movement', 'storage-movement', 'disposal-history'].includes(reportType)) {
+        filterQueries.push(`logs.user_id = $${paramIndex}`);
+        queryParams.push(labFilter.userId);
+        countParams.push(labFilter.userId);
+        paramIndex++;
+      }
+    } else if (labFilter.hasFilter) {
       if (['subject-registration', 'sample-collection', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report'].includes(reportType)) {
         filterQueries.push(`s.lab_id = $${paramIndex}`);
         queryParams.push(labFilter.labId);
@@ -69,6 +96,13 @@ export async function getReportData(req, res, next) {
         filterQueries.push(`logs.lab_name = $${paramIndex}`);
         queryParams.push(labName);
         countParams.push(labName);
+        paramIndex++;
+      }
+    } else if (!labFilter.isSuperAdmin && !labFilter.hasFilter) {
+      if (['subject-registration', 'sample-collection', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report', 'trace-specimen', 'collection-summary', 'collection-status', 'processing-status', 'processing-summary', 'inventory-status', 'qc-status', 'qc-summary'].includes(reportType)) {
+        filterQueries.push(`s.collector_id = $${paramIndex}`);
+        queryParams.push(labFilter.userId);
+        countParams.push(labFilter.userId);
         paramIndex++;
       }
     }
@@ -448,6 +482,11 @@ export async function getReportData(req, res, next) {
       }
 
       case 'empty-storage': {
+        if (labFilter.isDemoUser) {
+          totalRecords = 0;
+          rows = [];
+          break;
+        }
         // Predefined grid wells logic subtraction from database
         const occupiedRes = await query("SELECT location FROM samples WHERE location IS NOT NULL AND retrieval_status != 'Retrieved' AND status != 'Disposed'");
         const occupiedSet = new Set(occupiedRes.rows.map(r => r.location));
@@ -731,6 +770,11 @@ export async function getReportData(req, res, next) {
       }
 
       case 'temperature-logs': {
+        if (labFilter.isDemoUser) {
+          totalRecords = 0;
+          rows = [];
+          break;
+        }
         // Dynamically generated temperature monitoring logs
         const mockLogs = [];
         const units = ['ULT Freezer 03', 'LN2 Tank 01'];
@@ -762,6 +806,11 @@ export async function getReportData(req, res, next) {
       }
 
       case 'temperature-excursion': {
+        if (labFilter.isDemoUser) {
+          totalRecords = 0;
+          rows = [];
+          break;
+        }
         // Temperature excursion alerts (simulated events)
         const excursions = [
           { id: 'EXC-001', freezerUnit: 'ULT Freezer 03', deviationTemperature: '-74.2°C', thresholdLimit: '-78.0°C', duration: '45 mins', timestamp: '2026-08-20 14:30:12', status: 'Resolved' },
