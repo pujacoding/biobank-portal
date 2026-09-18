@@ -899,7 +899,10 @@ export default function App() {
           alignItems: 'center',
           padding: '0 24px',
           gap: '16px',
-          flexShrink: 0
+          flexShrink: 0,
+          position: 'sticky',
+          top: 0,
+          zIndex: 100
         }}>
           {/* Active Lab Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -375,6 +375,7 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
   const [loading, setLoading] = useState(false);
   const [totalRecords, setTotalRecords] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [totalPages, setTotalPages] = useState(1);
 
   // Filters State
@@ -386,14 +387,14 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
   const [qcVerdict, setQcVerdict] = useState('All');
   const [freezerUnit, setFreezerUnit] = useState('All');
 
-  // Trigger fetch when report type, page, or applied filters change
+  // Trigger fetch when report type, page, pageSize, or applied filters change
   const fetchReportData = async () => {
     setLoading(true);
     try {
       const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const queryParams = new URLSearchParams({
         page,
-        pageSize: 10,
+        pageSize,
         search,
         dateFrom,
         dateTo,
@@ -427,7 +428,7 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
 
   useEffect(() => {
     fetchReportData();
-  }, [activeReport, page]);
+  }, [activeReport, page, pageSize]);
 
   const handleApplyFilters = () => {
     setPage(1);
@@ -646,7 +647,7 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px', alignItems: 'start' }}>
         
         {/* Left Side: Accordion Menu */}
-        <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left', maxHeight: '720px', overflowY: 'auto' }}>
+        <div className="glass-card sticky-report-sidebar" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', position: 'sticky', top: '16px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-tertiary)', margin: '0 0 10px 8px', letterSpacing: '0.05em' }}>
             {reportsCategory === 'operations' ? 'Operations Modules' : reportsCategory === 'administration' ? 'Administration Modules' : 'Workflow Modules'}
           </h3>
@@ -979,9 +980,28 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
             {/* Pagination Panel */}
             {totalRecords > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Total Records: <strong>{totalRecords}</strong>
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Total Records: <strong>{totalRecords}</strong>
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Rows:</span>
+                    <select
+                      className="form-control"
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setPage(1);
+                      }}
+                      style={{ padding: '4px 8px', fontSize: '12px', width: 'auto', minWidth: '60px' }}
+                    >
+                      <option value={15}>15</option>
+                      <option value={30}>30</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
 
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <button

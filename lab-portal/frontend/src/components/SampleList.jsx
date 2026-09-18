@@ -39,10 +39,11 @@ export default function SampleList({
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
   const [regenerateReason, setRegenerateReason] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, specimenFilter]);
+  }, [search, statusFilter, specimenFilter, pageSize]);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -364,69 +365,71 @@ export default function SampleList({
         ← Back to Dashboard
       </button>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h1 style={{ fontSize: '26px', fontWeight: '700' }}>Biospecimen Registry</h1>
-          <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-            Review sample metadata, patient demographics, and active workflow states for {user.lab_name}.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {selectedSampleIds.length > 0 && (
-            <button 
-              className="btn btn-secondary" 
-              onClick={handlePrintSelected} 
-              style={{ padding: '8px 14px', fontSize: '13px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '14px', height: '14px' }}>
-                <polyline points="6 9 6 2 18 2 18 9"/>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                <rect x="6" y="14" width="12" height="8"/>
-              </svg>
-              Print Selected Labels ({selectedSampleIds.length})
+      <div className="sticky-workflow-header" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h1 style={{ fontSize: '26px', fontWeight: '700' }}>Biospecimen Registry</h1>
+            <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+              Review sample metadata, patient demographics, and active workflow states for {user.lab_name}.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {selectedSampleIds.length > 0 && (
+              <button 
+                className="btn btn-secondary" 
+                onClick={handlePrintSelected} 
+                style={{ padding: '8px 14px', fontSize: '13px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '14px', height: '14px' }}>
+                  <polyline points="6 9 6 2 18 2 18 9"/>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                  <rect x="6" y="14" width="12" height="8"/>
+                </svg>
+                Print Selected Labels ({selectedSampleIds.length})
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={() => setActiveTab('register')} style={{ padding: '8px 14px', fontSize: '13px' }}>
+              + Register Specimen
             </button>
-          )}
-          <button className="btn btn-primary" onClick={() => setActiveTab('register')} style={{ padding: '8px 14px', fontSize: '13px' }}>
-            + Register Specimen
-          </button>
+          </div>
         </div>
-      </div>
 
-      {/* Filter Toolbar */}
-      <div className="glass-card" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', padding: '16px 20px' }}>
-        <div style={{ flex: 2, minWidth: '220px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Search</label>
-          <input 
-            type="text" 
-            className="form-control"
-            placeholder="Search by Sample ID, Subject ID, Barcode..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div style={{ flex: 1, minWidth: '150px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Specimen Type</label>
-          <select 
-            className="form-control"
-            value={specimenFilter}
-            onChange={(e) => setSpecimenFilter(e.target.value)}
-          >
-            {uniqueSpecimenTypes.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ flex: 1, minWidth: '150px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Workflow Status</label>
-          <select 
-            className="form-control"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            {statusTypes.map(status => (
-              <option key={status} value={status}>{status === 'All' ? 'All Statuses' : status}</option>
-            ))}
-          </select>
+        {/* Filter Toolbar */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', padding: '16px 20px' }}>
+          <div style={{ flex: 2, minWidth: '220px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Search</label>
+            <input 
+              type="text" 
+              className="form-control"
+              placeholder="Search by Sample ID, Subject ID, Barcode..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: '150px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Specimen Type</label>
+            <select 
+              className="form-control"
+              value={specimenFilter}
+              onChange={(e) => setSpecimenFilter(e.target.value)}
+            >
+              {uniqueSpecimenTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: 1, minWidth: '150px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Workflow Status</label>
+            <select 
+              className="form-control"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              {statusTypes.map(status => (
+                <option key={status} value={status}>{status === 'All' ? 'All Statuses' : status}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -464,7 +467,6 @@ export default function SampleList({
               </thead>
               <tbody>
                 {(() => {
-                  const pageSize = 10;
                   const totalPages = Math.ceil(filteredSamples.length / pageSize);
                   const paginatedSamples = filteredSamples.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -620,13 +622,28 @@ export default function SampleList({
 
           {/* Pagination Controls */}
           {filteredSamples.length > 0 && (() => {
-            const pageSize = 10;
             const totalPages = Math.ceil(filteredSamples.length / pageSize);
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '10px', marginTop: '10px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Showing {Math.min(filteredSamples.length, (currentPage - 1) * pageSize + 1)} to {Math.min(filteredSamples.length, currentPage * pageSize)} of {filteredSamples.length} entries
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Showing {Math.min(filteredSamples.length, (currentPage - 1) * pageSize + 1)} to {Math.min(filteredSamples.length, currentPage * pageSize)} of {filteredSamples.length} entries
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Rows:</span>
+                    <select
+                      className="form-control"
+                      value={pageSize}
+                      onChange={(e) => setPageSize(Number(e.target.value))}
+                      style={{ padding: '4px 8px', fontSize: '12px', width: 'auto', minWidth: '60px' }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <button
                     type="button"
