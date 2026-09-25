@@ -638,6 +638,31 @@ export default function App() {
                       <button
                         onClick={() => {
                           setActiveTab('reports');
+                          setReportsCategory('workflow');
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'reports' && reportsCategory === 'workflow' ? 'rgba(0, 242, 254, 0.1)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'reports' && reportsCategory === 'workflow' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'reports' && reportsCategory === 'workflow' ? '700' : '500',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        🩸 Today's Sample Collect
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => {
+                          setActiveTab('reports');
                           setReportsCategory('operations');
                         }}
                         style={{

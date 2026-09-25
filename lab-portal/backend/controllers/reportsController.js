@@ -56,7 +56,7 @@ export async function getReportData(req, res, next) {
 
     // Apply demo user / lab context filter
     if (labFilter.isDemoUser) {
-      if (['subject-registration', 'sample-collection', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report', 'trace-specimen', 'collection-summary', 'collection-status', 'processing-status', 'processing-summary', 'inventory-status', 'qc-status', 'qc-summary'].includes(reportType)) {
+      if (['subject-registration', 'sample-collection', 'todays-collection', 'daily-collection-summary', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report', 'trace-specimen', 'collection-summary', 'collection-status', 'processing-status', 'processing-summary', 'inventory-status', 'qc-status', 'qc-summary'].includes(reportType)) {
         filterQueries.push(`s.collector_id = $${paramIndex}`);
         queryParams.push(labFilter.userId);
         countParams.push(labFilter.userId);
@@ -75,7 +75,7 @@ export async function getReportData(req, res, next) {
         paramIndex++;
       }
     } else if (labFilter.hasFilter) {
-      if (['subject-registration', 'sample-collection', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report'].includes(reportType)) {
+      if (['subject-registration', 'sample-collection', 'todays-collection', 'daily-collection-summary', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report'].includes(reportType)) {
         filterQueries.push(`s.lab_id = $${paramIndex}`);
         queryParams.push(labFilter.labId);
         countParams.push(labFilter.labId);
@@ -99,12 +99,21 @@ export async function getReportData(req, res, next) {
         paramIndex++;
       }
     } else if (!labFilter.isSuperAdmin && !labFilter.hasFilter) {
-      if (['subject-registration', 'sample-collection', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report', 'trace-specimen', 'collection-summary', 'collection-status', 'processing-status', 'processing-summary', 'inventory-status', 'qc-status', 'qc-summary'].includes(reportType)) {
+      if (['subject-registration', 'sample-collection', 'todays-collection', 'daily-collection-summary', 'sample-processing', 'specimen-inventory', 'expiry-report', 'storage-report', 'freezer-occupancy', 'qc-report', 'disposal-report', 'trace-specimen', 'collection-summary', 'collection-status', 'processing-status', 'processing-summary', 'inventory-status', 'qc-status', 'qc-summary'].includes(reportType)) {
         filterQueries.push(`s.collector_id = $${paramIndex}`);
         queryParams.push(labFilter.userId);
         countParams.push(labFilter.userId);
         paramIndex++;
       }
+    }
+
+    // Default to today for todays-collection if no date filter was explicitly supplied
+    if (reportType === 'todays-collection' && !params.dateFrom && !params.dateTo) {
+      const todayStr = new Date().toLocaleDateString('en-CA');
+      filterQueries.push(`s.collection_date = $${paramIndex}`);
+      queryParams.push(todayStr);
+      countParams.push(todayStr);
+      paramIndex++;
     }
 
     // Apply Date Filters
@@ -257,6 +266,48 @@ export async function getReportData(req, res, next) {
           FROM consent c
           ${whereClause}
           ORDER BY c.created_at ${params.sortOrder}
+          LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
+        `;
+        break;
+      }
+
+      case 'todays-collection': {
+        countStr = `SELECT COUNT(*) as total FROM samples s ${whereClause}`;
+        queryStr = `
+          SELECT 
+            s.id as "sampleId",
+            s.subject_id as "subjectId",
+            s.specimen_type as "specimenType",
+            s.sample_volume as "volume",
+            s.container_type as "containerType",
+            s.collection_date as "collectionDate",
+            s.collection_time as "collectionTime",
+            COALESCE(u.name, 'Staff') as "collector",
+            s.status as "workflowStatus",
+            COALESCE(c.verification_status, s.consent_status) as "consentStatus"
+          FROM samples s
+          LEFT JOIN users u ON s.collector_id = u.id
+          LEFT JOIN consent c ON s.consent_id = c.id
+          ${whereClause}
+          ORDER BY s.collection_date DESC, s.collection_time DESC, s.id DESC
+          LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
+        `;
+        break;
+      }
+
+      case 'daily-collection-summary': {
+        countStr = `SELECT COUNT(DISTINCT s.collection_date) as total FROM samples s ${whereClause}`;
+        queryStr = `
+          SELECT 
+            s.collection_date as "collectionDate",
+            COUNT(s.id) as "totalSamples",
+            COALESCE(SUM(s.sample_volume), 0) as "totalVolume",
+            COUNT(DISTINCT s.subject_id) as "totalDonors",
+            COUNT(DISTINCT s.collector_id) as "totalCollectors"
+          FROM samples s
+          ${whereClause}
+          GROUP BY s.collection_date
+          ORDER BY s.collection_date ${params.sortOrder}
           LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
         `;
         break;

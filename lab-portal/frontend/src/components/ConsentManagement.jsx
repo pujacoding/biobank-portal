@@ -314,11 +314,17 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
     }
   }, [currentPage]);
 
-  // Samples that need consent (consent_id is null, or verification_status is Rejected)
-  const samplesNeedConsent = (samples || []).filter(s => !s.consent_id || s.consent_status === 'Rejected');
+  // Samples that need consent or are pending verification (strictly exclude already verified consents)
+  const isConsentVerified = (s) => {
+    const cStatus = (s.consent_status || '').toLowerCase().trim();
+    const vStatus = (s.verification_status || '').toLowerCase().trim();
+    const sStatus = (s.status || '').toLowerCase().trim();
+    return cStatus === 'verified' || vStatus === 'verified' || cStatus === 'active' || sStatus === 'consent verified';
+  };
+  const pendingOrUnverifiedSamples = (samples || []).filter(s => !isConsentVerified(s));
   
   // Consent pending verification (consent_status === 'Submitted')
-  const pendingConsents = (samples || []).filter(s => s.consent_status === 'Submitted');
+  const pendingConsents = (samples || []).filter(s => (s.consent_status || '').toLowerCase().trim() === 'submitted');
 
   const selectedSample = (samples || []).find(s => s.id === selectedSampleId);
   const hasUploadedConsent = selectedSample && (
@@ -658,11 +664,9 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                 }}
               >
                 <option value="">-- Choose Sample Code --</option>
-                {samples.map(s => {
+                {pendingOrUnverifiedSamples.map(s => {
                   let statusText = '';
-                  if (s.consent_status === 'Verified') {
-                    statusText = ' (Consent VERIFIED)';
-                  } else if (s.consent_status === 'Submitted') {
+                  if (s.consent_status === 'Submitted') {
                     statusText = ' (Consent SUBMITTED)';
                   } else if (s.consent_status === 'Draft') {
                     statusText = ' (Consent DRAFT)';

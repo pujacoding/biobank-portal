@@ -40,10 +40,20 @@ export default function SampleList({
   const [regenerateReason, setRegenerateReason] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [collectionDateFilter, setCollectionDateFilter] = useState('All'); // 'All', 'Today', 'Custom'
+  const [customDate, setCustomDate] = useState('');
+
+  const todayDateStr = new Date().toLocaleDateString('en-CA');
+  const todaySamples = samples.filter(s => s.collection_date === todayDateStr);
+  const todayVolume = todaySamples.reduce((sum, s) => sum + (parseFloat(s.sample_volume) || 0), 0);
+  const todaySpecimenBreakdown = todaySamples.reduce((acc, s) => {
+    acc[s.specimen_type] = (acc[s.specimen_type] || 0) + 1;
+    return acc;
+  }, {});
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, specimenFilter, pageSize]);
+  }, [search, statusFilter, specimenFilter, collectionDateFilter, customDate, pageSize]);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -73,7 +83,14 @@ export default function SampleList({
     const matchesStatus = statusFilter === 'All' || sample.status === statusFilter;
     const matchesSpecimen = specimenFilter === 'All' || sample.specimen_type === specimenFilter;
 
-    return matchesSearch && matchesStatus && matchesSpecimen;
+    let matchesDate = true;
+    if (collectionDateFilter === 'Today') {
+      matchesDate = sample.collection_date === todayDateStr;
+    } else if (collectionDateFilter === 'Custom' && customDate) {
+      matchesDate = sample.collection_date === customDate;
+    }
+
+    return matchesSearch && matchesStatus && matchesSpecimen && matchesDate;
   });
 
   const uniqueSpecimenTypes = ['All', ...new Set(samples.map(s => s.specimen_type).filter(Boolean))];
@@ -394,9 +411,100 @@ export default function SampleList({
           </div>
         </div>
 
+        {/* Quick Collection View Tabs & Date Controls */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '6px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '4px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setCollectionDateFilter('All');
+                setCustomDate('');
+              }}
+              style={{
+                padding: '6px 14px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                background: collectionDateFilter === 'All' ? 'var(--accent-purple)' : 'transparent',
+                border: 'none',
+                color: collectionDateFilter === 'All' ? '#fff' : 'var(--text-secondary)',
+                fontWeight: collectionDateFilter === 'All' ? '700' : '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              All Specimens ({samples.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCollectionDateFilter('Today');
+                setCustomDate('');
+              }}
+              style={{
+                padding: '6px 14px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                background: collectionDateFilter === 'Today' ? 'var(--accent-cyan)' : 'transparent',
+                border: 'none',
+                color: collectionDateFilter === 'Today' ? '#000' : 'var(--text-secondary)',
+                fontWeight: collectionDateFilter === 'Today' ? '700' : '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              🩸 Today's Collected ({todaySamples.length})
+            </button>
+          </div>
+
+          {collectionDateFilter === 'Today' && (
+            <span style={{ fontSize: '12px', color: 'var(--accent-cyan)', fontWeight: '600' }}>
+              📅 Showing intake for today: {todayDateStr}
+            </span>
+          )}
+        </div>
+
+        {/* Today's Intake Quick Summary Banner */}
+        {collectionDateFilter === 'Today' && (
+          <div style={{
+            background: 'rgba(0, 242, 254, 0.05)',
+            border: '1px solid rgba(0, 242, 254, 0.2)',
+            borderRadius: 'var(--border-radius-md)',
+            padding: '14px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '24px' }}>🩸</span>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--accent-cyan)' }}>
+                  Today's Sample Collection Intake &bull; {todayDateStr}
+                </div>
+                <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  <strong>{todaySamples.length} samples</strong> collected today &bull; <strong>{todayVolume.toFixed(1)} mL</strong> accumulated volume &bull; {Object.keys(todaySpecimenBreakdown).length > 0 ? Object.entries(todaySpecimenBreakdown).map(([k, v]) => `${v} ${k}`).join(', ') : 'No specimen recorded yet today'}
+                </div>
+              </div>
+            </div>
+            <button 
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setActiveTab('reports')}
+              style={{ padding: '6px 12px', fontSize: '12px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)' }}
+            >
+              View Daily Reports &rarr;
+            </button>
+          </div>
+        )}
+
         {/* Filter Toolbar */}
         <div className="glass-card" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', padding: '16px 20px' }}>
-          <div style={{ flex: 2, minWidth: '220px' }}>
+          <div style={{ flex: 2, minWidth: '200px' }}>
             <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Search</label>
             <input 
               type="text" 
@@ -406,7 +514,7 @@ export default function SampleList({
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div style={{ flex: 1, minWidth: '150px' }}>
+          <div style={{ flex: 1, minWidth: '140px' }}>
             <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Specimen Type</label>
             <select 
               className="form-control"
@@ -418,7 +526,7 @@ export default function SampleList({
               ))}
             </select>
           </div>
-          <div style={{ flex: 1, minWidth: '150px' }}>
+          <div style={{ flex: 1, minWidth: '140px' }}>
             <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Workflow Status</label>
             <select 
               className="form-control"
@@ -430,6 +538,32 @@ export default function SampleList({
               ))}
             </select>
           </div>
+          <div style={{ flex: 1, minWidth: '150px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Collection Date</label>
+            <select 
+              className="form-control"
+              value={collectionDateFilter}
+              onChange={(e) => {
+                setCollectionDateFilter(e.target.value);
+                if (e.target.value !== 'Custom') setCustomDate('');
+              }}
+            >
+              <option value="All">All Dates</option>
+              <option value="Today">Today ({todayDateStr})</option>
+              <option value="Custom">Pick Specific Date...</option>
+            </select>
+          </div>
+          {collectionDateFilter === 'Custom' && (
+            <div style={{ flex: 1, minWidth: '140px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Custom Date</label>
+              <input 
+                type="date"
+                className="form-control"
+                value={customDate}
+                onChange={(e) => setCustomDate(e.target.value)}
+              />
+            </div>
+          )}
         </div>
       </div>
 
