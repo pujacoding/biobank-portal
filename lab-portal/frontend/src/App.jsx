@@ -5,7 +5,7 @@ import Dashboard from './components/Dashboard';
 import SampleRegistration from './components/SampleRegistration';
 import SampleList from './components/SampleList';
 import ConsentManagement from './components/ConsentManagement';
-import BarcodeDashboard from './components/BarcodeDashboard';
+import BarcodeManager from './components/BarcodeManager';
 import AuditTrail from './components/AuditTrail';
 import UserManagement from './components/UserManagement';
 import BarcodePrintSettings from './components/BarcodePrintSettings';
@@ -713,7 +713,7 @@ export default function App() {
                 )}
               </li>
 
-              {(user.role === 'Lab Admin' || user.role === 'Super Admin') && (
+              {(user.role === 'Lab Admin' || user.role === 'Super Admin' || user.role === 'Lab Technician' || user.role === 'Collection Staff' || user.role === 'Biobank Staff' || hasPermission('View Barcode') || hasPermission('View Sample')) && (
                 <li>
                   <button
                     onClick={() => setActiveTab('barcode')}
@@ -1107,7 +1107,7 @@ export default function App() {
           )}
 
           {activeTab === 'barcode' && (
-            <BarcodeDashboard 
+            <BarcodeManager 
               samples={samples} 
               backendUrl={BACKEND_URL} 
               token={token} 
