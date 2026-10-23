@@ -248,7 +248,7 @@ export async function getSamples(req, res, next) {
       LEFT JOIN users u ON s.collector_id = u.id
       LEFT JOIN labs l ON s.lab_id = l.id
       LEFT JOIN consent c ON s.consent_id = c.id
-      LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status = 'Active'
+      LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status NOT IN ('VOIDED', 'Inactive')
       LEFT JOIN (
         SELECT ss1.sample_id, sh1.destination as shipment_destination
         FROM shipment_samples ss1

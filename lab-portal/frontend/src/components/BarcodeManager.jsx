@@ -150,7 +150,7 @@ export default function BarcodeManager({
 
   const fetchEligibleSamples = async () => {
     try {
-      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
+      const activeLab = activeLabId || sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const response = await fetch(`${backendUrl}/api/barcode/eligible-samples`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -234,7 +234,7 @@ export default function BarcodeManager({
     } else if (currentTab === 'scan') {
       setTimeout(() => scanInputRef.current?.focus(), 200);
     }
-  }, [currentTab, auditPage, auditActionFilter]);
+  }, [currentTab, activeLabId, auditPage, auditActionFilter]);
 
   // Clean messages after 4 seconds
   useEffect(() => {
@@ -294,7 +294,7 @@ export default function BarcodeManager({
       return;
     }
 
-    if (selectedSampleForGen.consent_status !== 'Submitted' && selectedSampleForGen.consent_status !== 'Verified') {
+    if ((selectedSampleForGen.consent_status || '').toUpperCase() !== 'VERIFIED') {
       setError("Consent must be verified before specimen labels can be generated.");
       return;
     }
@@ -304,7 +304,7 @@ export default function BarcodeManager({
     setSuccess('');
 
     try {
-      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
+      const activeLab = activeLabId || sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const response = await fetch(`${backendUrl}/api/barcode/generate`, {
         method: 'POST',
         headers: {
@@ -323,7 +323,7 @@ export default function BarcodeManager({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to generate barcode');
 
-      setSuccess(`Barcode ${data.barcode.barcode_value} generated successfully!`);
+      setSuccess(`Barcode ${data.barcode.barcode_value} generated successfully with status GENERATED!`);
 
       // Add to print queue if requested
       if (andAddToQueue) {
@@ -342,28 +342,16 @@ export default function BarcodeManager({
         });
       }
 
-      // Automatically open Label Preview for immediate physical print
-      const fullPrintObj = {
-        id: selectedSampleForGen.sample_id,
-        sample_id: selectedSampleForGen.sample_id,
-        barcode_id: data.barcode.barcode_id,
-        barcode_value: data.barcode.barcode_value,
-        barcode_text: data.barcode.barcode_value,
-        specimen_type: selectedSampleForGen.specimen_type,
-        sample_volume: selectedSampleForGen.sample_volume,
-        volume_unit: genVolumeUnit,
-        collection_date: selectedSampleForGen.collection_date,
-        qr_code_base64: data.barcode.qr_code_base64,
-        code128_base64: data.barcode.code128_base64,
-        aliquots: data.aliquots || []
-      };
+      // Reset selection and close any modal
+      setSelectedSampleForGen(null);
+      setActiveModal(null);
 
-      setTargetBarcode(fullPrintObj);
-      setActiveModal('print');
+      // Automatically switch to Registry tab to display the newly generated barcode
+      setCurrentTab('registry');
 
       // Refresh data
-      fetchEligibleSamples();
       fetchRegistryData();
+      fetchEligibleSamples();
       if (onBarcodeAction) onBarcodeAction();
     } catch (err) {
       setError(err.message);
@@ -1623,15 +1611,15 @@ export default function BarcodeManager({
                             {s.sample_volume} {s.volume_unit}
                           </td>
                           <td style={{ padding: '10px 8px' }}>
-                            {s.consent_status === 'Verified' ? (
+                            {(s.consent_status || '').toUpperCase() === 'VERIFIED' ? (
                               <span style={{ fontSize: '10px', color: 'var(--accent-success)', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', background: 'rgba(0, 230, 118, 0.15)' }}>
                                 ✓ VERIFIED
                               </span>
-                            ) : s.consent_status === 'Submitted' ? (
+                            ) : (s.consent_status || '').toUpperCase() === 'SUBMITTED' ? (
                               <span style={{ fontSize: '10px', color: 'var(--accent-cyan)', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', background: 'rgba(0, 242, 254, 0.15)' }}>
                                 SUBMITTED
                               </span>
-                            ) : s.consent_status === 'Withdrawn' ? (
+                            ) : (s.consent_status || '').toUpperCase() === 'WITHDRAWN' ? (
                               <span style={{ fontSize: '10px', color: 'var(--accent-error)', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.15)' }}>
                                 WITHDRAWN
                               </span>
@@ -1673,7 +1661,7 @@ export default function BarcodeManager({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* Consent verification warning block if not verified */}
-                {selectedSampleForGen.consent_status !== 'Verified' && selectedSampleForGen.consent_status !== 'Submitted' && (
+                {(selectedSampleForGen.consent_status || '').toUpperCase() !== 'VERIFIED' && (
                   <div style={{
                     padding: '12px',
                     borderRadius: 'var(--border-radius-sm)',
@@ -1842,7 +1830,7 @@ export default function BarcodeManager({
                 <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
                   <button
                     className="btn btn-primary"
-                    disabled={generating || (selectedSampleForGen.consent_status !== 'Verified' && selectedSampleForGen.consent_status !== 'Submitted')}
+                    disabled={generating || (selectedSampleForGen.consent_status || '').toUpperCase() !== 'VERIFIED'}
                     onClick={() => handleExecuteGenerate(false)}
                     style={{ flex: 1, padding: '10px', fontSize: '13px', fontWeight: '700' }}
                   >
@@ -1850,7 +1838,7 @@ export default function BarcodeManager({
                   </button>
                   <button
                     className="btn btn-secondary"
-                    disabled={generating || (selectedSampleForGen.consent_status !== 'Verified' && selectedSampleForGen.consent_status !== 'Submitted')}
+                    disabled={generating || (selectedSampleForGen.consent_status || '').toUpperCase() !== 'VERIFIED'}
                     onClick={() => handleExecuteGenerate(true)}
                     style={{ flex: 1, padding: '10px', fontSize: '13px' }}
                   >

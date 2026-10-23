@@ -377,6 +377,8 @@ export async function getHistory(req, res, next) {
 
 export async function getEligibleSamples(req, res, next) {
   try {
+    const isSuperAdmin = req.user.role === 'Super Admin' || parseInt(req.user.roleId, 10) === 1;
+
     let sql = `
       SELECT 
         s.id as sample_id,
@@ -394,6 +396,7 @@ export async function getEligibleSamples(req, res, next) {
         s.status as sample_status,
         s.parent_sample_id,
         s.aliquot_count,
+        s.lab_id,
         l.name as collection_site,
         b.barcode_value as active_barcode,
         b.barcode_id as active_barcode_id,
@@ -404,12 +407,29 @@ export async function getEligibleSamples(req, res, next) {
       LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status NOT IN ('VOIDED', 'Inactive')
     `;
 
+    const whereConditions = [
+      `(UPPER(COALESCE(c.verification_status, s.consent_status, '')) = 'VERIFIED' OR UPPER(s.consent_status) = 'VERIFIED')`,
+      `COALESCE(c.verification_status, s.consent_status, '') != 'Withdrawn'`,
+      `c.withdrawn_at IS NULL`,
+      `(s.status IS NULL OR s.status NOT IN ('Disposed', 'Exhausted'))`,
+      `b.barcode_id IS NULL`,
+      `NOT EXISTS (
+         SELECT 1 FROM barcodes b2 
+         WHERE b2.sample_id = s.id 
+           AND b2.status NOT IN ('VOIDED', 'Inactive')
+       )`
+    ];
     const params = [];
-    if (req.user.labId && req.user.role !== 'Super Admin') {
-      sql += ` WHERE s.lab_id = $1`;
+
+    if (req.user.labId && !isSuperAdmin) {
+      whereConditions.push(`(s.lab_id = $${params.length + 1} OR s.lab_id IS NULL)`);
+      params.push(req.user.labId);
+    } else if (req.user.labId && isSuperAdmin) {
+      whereConditions.push(`s.lab_id = $${params.length + 1}`);
       params.push(req.user.labId);
     }
 
+    sql += ` WHERE ${whereConditions.join(' AND ')}`;
     sql += ` ORDER BY s.created_at DESC LIMIT 200`;
 
     const result = await query(sql, params);
@@ -448,11 +468,11 @@ export async function generateBarcode(req, res, next) {
       LEFT JOIN specimen_types st ON s.specimen_type_id = st.id
       LEFT JOIN labs l ON s.lab_id = l.id
       WHERE s.id = $1
-      FOR UPDATE
+      FOR UPDATE OF s
     `;
     const params = [sample_id];
     if (req.user.labId && req.user.role !== 'Super Admin') {
-      sql += " AND s.lab_id = $2";
+      sql += " AND (s.lab_id = $2 OR s.lab_id IS NULL)";
       params.push(req.user.labId);
     }
     const sampleCheck = await client.query(sql, params);
@@ -465,12 +485,13 @@ export async function generateBarcode(req, res, next) {
     const sample = sampleCheck.rows[0];
 
     // STRICT CONSENT VALIDATION
-    if (sample.effective_consent_status === 'Withdrawn') {
+    if (sample.effective_consent_status === 'Withdrawn' || sample.consent_status === 'Withdrawn') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: "Barcode generation blocked: Sample has withdrawn consent." });
     }
 
-    if (sample.effective_consent_status !== 'Submitted' && sample.effective_consent_status !== 'Verified') {
+    const consentStatusUpper = (sample.effective_consent_status || sample.consent_status || '').toUpperCase();
+    if (consentStatusUpper !== 'VERIFIED') {
       await client.query('ROLLBACK');
       return res.status(400).json({ 
         error: "Consent must be verified before specimen labels can be generated."
@@ -1145,7 +1166,7 @@ export async function scanAndVerify(req, res, next) {
       WHERE b.barcode_value = $1 OR s.id = $1
       ORDER BY b.generated_at DESC
       LIMIT 1
-      FOR UPDATE
+      FOR UPDATE OF b, s
     `, [cleanCode]);
 
     if (bCheck.rows.length === 0) {
@@ -1371,7 +1392,7 @@ export async function replaceBarcode(req, res, next) {
       JOIN samples s ON b.sample_id = s.id
       LEFT JOIN specimen_types st ON s.specimen_type_id = st.id
       WHERE (b.barcode_id = $1 OR b.barcode_value = $2)
-      FOR UPDATE
+      FOR UPDATE OF b, s
     `, [barcode_id || null, barcode_value || null]);
 
     if (bCheck.rows.length === 0) {
