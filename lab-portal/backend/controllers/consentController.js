@@ -1,22 +1,7 @@
-import bwipjs from 'bwip-js';
 import { query, getClient } from '../services/dbService.js';
 import { checkUserPermission } from '../middleware/auth.js';
 
 const generateConsentId = () => 'CNS-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
-
-const generateBarcodeBuffer = (bcid, text, options = {}) => {
-  return new Promise((resolve, reject) => {
-    bwipjs.toBuffer({
-      bcid,
-      text,
-      scale: 3,
-      ...options
-    }, (err, png) => {
-      if (err) reject(err);
-      else resolve(png);
-    });
-  });
-};
 
 /**
  * Fetch active consent templates
@@ -549,22 +534,22 @@ export async function withdrawConsent(req, res, next) {
 
       // Deactivate active barcodes associated with this sample
       await client.query(
-        "UPDATE barcodes SET status = 'Inactive' WHERE sample_id = $1 AND status = 'Active'",
+        "UPDATE barcodes SET status = 'Inactive' WHERE sample_id = $1 AND status NOT IN ('VOIDED', 'Inactive')",
         [sample_id]
       );
 
       // Fetch the deactivated barcode ID if any, for auditing
       const barcodeCheck = await client.query(
-        "SELECT barcode_id FROM barcodes WHERE sample_id = $1 AND status = 'Inactive' ORDER BY generated_at DESC LIMIT 1",
+        "SELECT barcode_id, barcode_value FROM barcodes WHERE sample_id = $1 AND status = 'Inactive' ORDER BY generated_at DESC LIMIT 1",
         [sample_id]
       );
 
       if (barcodeCheck.rows.length > 0) {
-        const barcodeId = barcodeCheck.rows[0].barcode_id;
+        const { barcode_id: barcodeId, barcode_value: barcodeValue } = barcodeCheck.rows[0];
         await client.query(`
-          INSERT INTO barcode_audit (sample_id, barcode_id, action_type, reason, performed_by)
-          VALUES ($1, $2, 'Barcode Deactivated', 'Consent withdrawn by patient', $3)
-        `, [sample_id, barcodeId, req.user.userId]);
+          INSERT INTO barcode_audit (sample_id, barcode_id, barcode_value, action_type, reason, performed_by)
+          VALUES ($1, $2, $3, 'Barcode Deactivated', 'Consent withdrawn by patient', $4)
+        `, [sample_id, barcodeId, barcodeValue, req.user.userId]);
       }
 
       logMsg = `Consent withdrawn for sample ${sample_id}. Barcode deactivated and sample status set back to Collected.`;
