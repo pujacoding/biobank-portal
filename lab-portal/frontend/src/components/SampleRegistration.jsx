@@ -607,8 +607,52 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
     t.consent_code.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Active section tracking for sticky sidebar
+  const [activeSection, setActiveSection] = useState('A');
+
+  const sectionRefs = {
+    A: useRef(null),
+    B: useRef(null),
+    C: useRef(null),
+  };
+
+  // Scroll-spy: update active section as user scrolls
+  useEffect(() => {
+    const formEl = document.getElementById('sample-reg-form-scroll');
+    if (!formEl) return;
+    const onScroll = () => {
+      const scrollTop = formEl.scrollTop;
+      const offsets = Object.entries(sectionRefs).map(([key, ref]) => ({
+        key,
+        top: ref.current ? ref.current.offsetTop : 9999
+      }));
+      let active = 'A';
+      offsets.forEach(({ key, top }) => {
+        if (scrollTop + 60 >= top) active = key;
+      });
+      setActiveSection(active);
+    };
+    formEl.addEventListener('scroll', onScroll, { passive: true });
+    return () => formEl.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const scrollToSection = (key) => {
+    const formEl = document.getElementById('sample-reg-form-scroll');
+    const ref = sectionRefs[key];
+    if (formEl && ref.current) {
+      formEl.scrollTo({ top: ref.current.offsetTop - 16, behavior: 'smooth' });
+      setActiveSection(key);
+    }
+  };
+
+  const SECTIONS = [
+    { key: 'A', label: 'Subject Info', icon: '👤' },
+    { key: 'B', label: 'Specimen Info', icon: '🧪' },
+    { key: 'C', label: 'Collection Info', icon: '🏥' },
+  ];
+
   return (
-    <div style={{ maxWidth: '780px', margin: '0 auto', textAlign: 'left' }}>
+    <div style={{ maxWidth: '960px', margin: '0 auto', textAlign: 'left' }}>
       {/* Back Button */}
       <button 
         className="btn btn-secondary" 
@@ -705,6 +749,66 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
         </div>
       )}
 
+      {/* Two-column layout: sticky sidebar + scrollable form */}
+      <div style={{ display: 'flex', gap: '0', alignItems: 'flex-start' }}>
+
+        {/* ── Sticky Left Sidebar ── */}
+        <div style={{
+          width: '180px',
+          flexShrink: 0,
+          position: 'sticky',
+          top: '24px',
+          alignSelf: 'flex-start',
+          marginRight: '20px',
+        }}>
+          <div className="glass-card" style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
+              Workflow Steps
+            </div>
+            {SECTIONS.map((sec) => {
+              const isActive = activeSection === sec.key;
+              return (
+                <button
+                  key={sec.key}
+                  type="button"
+                  onClick={() => scrollToSection(sec.key)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '9px 10px',
+                    borderRadius: '8px',
+                    border: isActive ? '1px solid rgba(6,182,212,0.4)' : '1px solid transparent',
+                    background: isActive ? 'rgba(6,182,212,0.12)' : 'transparent',
+                    color: isActive ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: isActive ? '700' : '500',
+                    textAlign: 'left',
+                    width: '100%',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <span style={{
+                    width: '22px', height: '22px', borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '11px', flexShrink: 0,
+                    background: isActive ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.06)',
+                    color: isActive ? '#000' : 'var(--text-tertiary)',
+                    fontWeight: '800',
+                  }}>
+                    {sec.key}
+                  </span>
+                  <span>{sec.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Scrollable Form Column ── */}
+        <div id="sample-reg-form-scroll" style={{ flex: 1, minWidth: 0, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: '4px' }}>
+
       <form key={formKey} onSubmit={(e) => e.preventDefault()} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         
         {!activeLabId && (
@@ -747,7 +851,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
 
         <fieldset disabled={!activeLabId} style={{ border: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Section A: Subject Information */}
-        <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <fieldset ref={sectionRefs.A} style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Section A: Subject Information
           </legend>
@@ -1049,7 +1153,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
         <hr style={{ border: 'none', borderTop: '1px solid var(--border-color)' }} />
 
         {/* Section B: Specimen Information */}
-        <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <fieldset ref={sectionRefs.B} style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Section B: Specimen Information
           </legend>
@@ -1358,7 +1462,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
 
 
         {/* Section C: Collection Information */}
-        <fieldset style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <fieldset ref={sectionRefs.B} style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-tertiary)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Section C: Collection Information (Auto Fetched)
           </legend>
