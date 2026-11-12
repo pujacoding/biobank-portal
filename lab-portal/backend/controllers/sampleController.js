@@ -58,8 +58,22 @@ export async function registerSample(req, res, next) {
       return res.status(400).json({ error: "Sample volume must be greater than zero" });
     }
 
-    // Dynamic Specimen Type validation
-    const specTypeCheck = await query("SELECT * FROM specimen_types WHERE id = $1 AND status = 'Active'", [specimen_type_id]);
+    const collector_id = req.user.userId;
+    const lab_id = req.user.labId;
+
+    // Run independent validation & metadata lookups in parallel
+    const [specTypeCheck, templateResult, userResult, labNameRes] = await Promise.all([
+      query("SELECT * FROM specimen_types WHERE id = $1 AND status = 'Active'", [specimen_type_id]),
+      query("SELECT version FROM consent_templates WHERE template_id = $1", [firstTemplateId]),
+      query(`
+        SELECT u.name, r.role_name as role
+        FROM users u
+        LEFT JOIN roles r ON u.role_id = r.role_id
+        WHERE u.id = $1
+      `, [collector_id]),
+      lab_id ? query("SELECT name FROM labs WHERE id = $1", [lab_id]) : Promise.resolve({ rows: [] })
+    ]);
+
     if (specTypeCheck.rows.length === 0) {
       return res.status(400).json({ error: "Invalid or inactive specimen type selected." });
     }
@@ -73,8 +87,6 @@ export async function registerSample(req, res, next) {
       resolvedSpecimenName = specimen_type.trim();
     }
 
-    // Resolve consent template details
-    const templateResult = await query("SELECT version FROM consent_templates WHERE template_id = $1", [firstTemplateId]);
     if (templateResult.rows.length === 0) {
       return res.status(400).json({ error: "Invalid consent template selected." });
     }
@@ -87,28 +99,11 @@ export async function registerSample(req, res, next) {
     const localTime = now.toTimeString().split(' ')[0]; 
     const collection_datetime = `${localDate} ${localTime}`;
 
-    const collector_id = req.user.userId;
-    const lab_id = req.user.labId;
-
-    // Fetch user details for audit logging
-    const userResult = await query(`
-      SELECT u.name, r.role_name as role
-      FROM users u
-      LEFT JOIN roles r ON u.role_id = r.role_id
-      WHERE u.id = $1
-    `, [collector_id]);
-    
     const userRow = userResult.rows[0] || { name: "System", role: "Collection Staff" };
     const collectorName = userRow.name;
     const collectorRole = userRow.role;
 
-    let labName = "Aura Biobank Admin Center";
-    if (lab_id) {
-      const labNameRes = await query("SELECT name FROM labs WHERE id = $1", [lab_id]);
-      if (labNameRes.rows.length > 0) {
-        labName = labNameRes.rows[0].name;
-      }
-    }
+    const labName = labNameRes.rows[0]?.name || "Aura Biobank Admin Center";
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "";
 
     const finalContainerType = container_type || 'Tube';
@@ -217,8 +212,13 @@ export async function registerSample(req, res, next) {
  */
 export async function getSamples(req, res, next) {
   try {
-    const userCheck = await query("SELECT role_id, email, name FROM users WHERE id = $1", [req.user.userId]);
-    const userRow = userCheck.rows[0];
+    let userRow = req.user?.roleId
+      ? { role_id: req.user.roleId, email: req.user.email, name: req.user.name }
+      : null;
+    if (!userRow) {
+      const userCheck = await query("SELECT role_id, email, name FROM users WHERE id = $1", [req.user.userId]);
+      userRow = userCheck.rows[0];
+    }
     const userRoleId = parseInt(userRow?.role_id, 10);
     const isSuperAdmin = req.user.role === 'Super Admin' || userRoleId === 1;
     const isDemoUser = Boolean(
@@ -404,37 +404,33 @@ export async function getDashboardStats(req, res, next) {
     }
     // For Super Admin with no active lab, sampleFilter remains "" (global count)
 
-    // 1. Total Samples
-    const totalSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${sampleFilter}`, params);
-    const totalSamples = parseInt(totalSamplesRes.rows[0]?.count || 0, 10);
-
-    // 2. Today's Collection
     const todayStr = new Date().toLocaleDateString('en-CA');
-    const todayClause = `collection_date = $${params.length + 1}`;
-    const todayFilter = sampleFilter ? `${sampleFilter} AND ${todayClause}` : ` WHERE ${todayClause}`;
-    const todayParams = [...params, todayStr];
-    const todayCollectionRes = await query(`SELECT COUNT(*) as count FROM samples${todayFilter}`, todayParams);
-    const todayCollection = parseInt(todayCollectionRes.rows[0]?.count || 0, 10);
+    const todayParamIdx = params.length + 1;
 
-    // 3. Stored Samples: sample must have status = 'Stored' OR (has location and not disposed/released)
-    const storedClause = `(status = 'Stored' OR (location IS NOT NULL AND status NOT IN ('Disposed', 'Released', 'Retrieved') AND retrieval_status = 'Stored'))`;
-    const storedFilter = sampleFilter ? `${sampleFilter} AND ${storedClause}` : ` WHERE ${storedClause}`;
-    const storedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${storedFilter}`, params);
-    const storedSamples = parseInt(storedSamplesRes.rows[0]?.count || 0, 10);
+    // Execute all sample aggregations in a single query + studies count in parallel
+    const [aggRes, researchProjectsRes] = await Promise.all([
+      query(
+        `SELECT
+          COUNT(*) AS total_samples,
+          COUNT(*) FILTER (WHERE collection_date = $${todayParamIdx}) AS today_collection,
+          COUNT(*) FILTER (WHERE status = 'Stored' OR (location IS NOT NULL AND status NOT IN ('Disposed', 'Released', 'Retrieved') AND retrieval_status = 'Stored')) AS stored_samples,
+          COUNT(*) FILTER (WHERE status IN ('Released', 'Retrieved', 'Allocated') OR retrieval_status IN ('Released', 'Retrieved', 'Allocated')) AS released_samples,
+          COUNT(*) FILTER (WHERE status = 'Disposed' OR retrieval_status = 'Disposed') AS disposed_samples
+        FROM samples${sampleFilter}`,
+        [...params, todayStr]
+      ),
+      isDemoUser
+        ? Promise.resolve({ rows: [{ count: 0 }] })
+        : query("SELECT COUNT(*) as count FROM studies")
+    ]);
 
-    // 4. Released Samples
-    const releasedClause = `(status IN ('Released', 'Retrieved', 'Allocated') OR retrieval_status IN ('Released', 'Retrieved', 'Allocated'))`;
-    const releasedFilter = sampleFilter ? `${sampleFilter} AND ${releasedClause}` : ` WHERE ${releasedClause}`;
-    const releasedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${releasedFilter}`, params);
-    const releasedSamples = parseInt(releasedSamplesRes.rows[0]?.count || 0, 10);
+    const agg = aggRes.rows[0] || {};
+    const totalSamples = parseInt(agg.total_samples || 0, 10);
+    const todayCollection = parseInt(agg.today_collection || 0, 10);
+    const storedSamples = parseInt(agg.stored_samples || 0, 10);
+    const releasedSamples = parseInt(agg.released_samples || 0, 10);
+    const disposedSamples = parseInt(agg.disposed_samples || 0, 10);
 
-    // 5. Disposed Samples
-    const disposedClause = `(status = 'Disposed' OR retrieval_status = 'Disposed')`;
-    const disposedFilter = sampleFilter ? `${sampleFilter} AND ${disposedClause}` : ` WHERE ${disposedClause}`;
-    const disposedSamplesRes = await query(`SELECT COUNT(*) as count FROM samples${disposedFilter}`, params);
-    const disposedSamples = parseInt(disposedSamplesRes.rows[0]?.count || 0, 10);
-
-    // 6. Available Storage & Capacity
     let totalCapacity = 0;
     let availableStorage = 0;
     if (isDemoUser) {
@@ -445,14 +441,7 @@ export async function getDashboardStats(req, res, next) {
       availableStorage = Math.max(0, totalCapacity - storedSamples);
     }
 
-    // 7. Research Projects (Total studies)
-    let researchProjects = 0;
-    if (!isDemoUser) {
-      const researchProjectsRes = await query("SELECT COUNT(*) as count FROM studies");
-      researchProjects = parseInt(researchProjectsRes.rows[0]?.count || 0, 10);
-    }
-
-    // 8. Temperature Alerts (Normally 0)
+    const researchProjects = isDemoUser ? 0 : parseInt(researchProjectsRes.rows[0]?.count || 0, 10);
     const tempAlerts = 0;
 
     res.json({

@@ -178,24 +178,21 @@ export default function App() {
   // Fetch samples & accessible labs on load or token/activeLabId change
   useEffect(() => {
     if (token) {
-      fetchSamples(token);
-      fetchAccessibleLabs(token);
+      Promise.all([fetchSamples(token), fetchAccessibleLabs(token)]);
     }
   }, [token, activeLabId]);
 
   const handleLoginSuccess = (newToken, newUser) => {
-    setToken(newToken);
-    setUser(newUser);
     sessionStorage.setItem('aura_lab_token', newToken);
     sessionStorage.setItem('aura_lab_user', JSON.stringify(newUser));
     localStorage.removeItem('aura_lab_token');
     localStorage.removeItem('aura_lab_user');
     // If the user has a specific assigned lab, auto-set it as active
     if (newUser.lab_id !== null && newUser.lab_id !== undefined) {
-      setActiveLabId(newUser.lab_id);
-      setActiveLabName(newUser.lab_name);
       sessionStorage.setItem('aura_active_lab_id', newUser.lab_id);
       sessionStorage.setItem('aura_active_lab_name', newUser.lab_name);
+      setActiveLabId(newUser.lab_id);
+      setActiveLabName(newUser.lab_name);
     } else {
       sessionStorage.removeItem('aura_active_lab_id');
       sessionStorage.removeItem('aura_active_lab_name');
@@ -204,8 +201,8 @@ export default function App() {
       setActiveLabId('');
       setActiveLabName('');
     }
-    fetchSamples(newToken);
-    fetchAccessibleLabs(newToken);
+    setUser(newUser);
+    setToken(newToken);
   };
 
   const handleLogout = (skipBroadcast = false) => {

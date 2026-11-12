@@ -958,15 +958,14 @@ export async function getReportData(req, res, next) {
       }
     }
 
-    // Execute query and count if query strings exist
+    // Execute count and data queries in parallel if query strings exist
     if (queryStr) {
-      // Execute count
-      const countRes = await query(countStr, countParams);
-      totalRecords = parseInt(countRes.rows[0]?.total || 0, 10);
-
-      // Execute main data query
       const fullParams = [...queryParams, params.pageSize, params.offset];
-      const dataRes = await query(queryStr, fullParams);
+      const [countRes, dataRes] = await Promise.all([
+        query(countStr, countParams),
+        query(queryStr, fullParams)
+      ]);
+      totalRecords = parseInt(countRes.rows[0]?.total || 0, 10);
       rows = dataRes.rows;
     }
 

@@ -106,6 +106,16 @@ export async function initDb() {
       console.log("AURA DB: Barcode Manager migration & permissions verified.");
     }
 
+    // Ensure hot-path performance indexes exist
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email));
+      CREATE INDEX IF NOT EXISTS idx_samples_lab_id ON samples (lab_id);
+      CREATE INDEX IF NOT EXISTS idx_samples_collector_id ON samples (collector_id);
+      CREATE INDEX IF NOT EXISTS idx_samples_collection_date ON samples (collection_date);
+      CREATE INDEX IF NOT EXISTS idx_samples_created_at ON samples (created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_samples_status ON samples (status);
+    `);
+
   } catch (err) {
     console.error("AURA DB [FATAL] Database initialization failed:", err);
     throw err;

@@ -1,5 +1,6 @@
 import { query, getClient } from '../services/dbService.js';
 import { hashPassword } from '../utils/crypto.js';
+import { invalidatePermissionCache } from '../middleware/auth.js';
 
 /**
  * Helper to log audit activities
@@ -335,6 +336,7 @@ export async function updateUser(req, res, next) {
     await logActivity(client, req.user.userId, 'PERMISSION_ASSIGNMENT', 'User Management', 'User', targetUserId, null, { permissions }, req.headers, req.socket);
 
     await client.query('COMMIT');
+    invalidatePermissionCache(targetUserId);
 
     res.json({
       success: true,
@@ -405,6 +407,7 @@ export async function updateUserStatus(req, res, next) {
       SET status = $1, ${statusSqlParts}, modified_by = $4, modified_date = $5
       WHERE id = $6
     `, [status, ...statusParams, editorName, nowStr, targetUserId]);
+    invalidatePermissionCache(targetUserId);
 
     const client = await getClient();
     try {
@@ -670,6 +673,7 @@ export async function updateLab(req, res, next) {
     await logActivity(client, req.user.userId, 'UPDATE', 'Administration', 'Lab', labId, oldLab, { name, location_address, status, sub_units }, req.headers, req.socket);
 
     await client.query('COMMIT');
+    invalidatePermissionCache(targetUserId);
 
     res.json({ success: true, message: "Laboratory updated successfully" });
   } catch (err) {
@@ -715,6 +719,7 @@ export async function deleteLab(req, res, next) {
     await logActivity(client, req.user.userId, 'DELETE', 'Administration', 'Lab', labId, labCheck.rows[0], null, req.headers, req.socket);
 
     await client.query('COMMIT');
+    invalidatePermissionCache(targetUserId);
 
     res.json({ success: true, message: "Laboratory deleted successfully" });
   } catch (err) {

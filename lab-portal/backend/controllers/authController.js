@@ -106,27 +106,27 @@ export async function verifyOtp(req, res, next) {
       { expiresIn: '24h' }
     );
 
-    // Log login to user_activity_logs
+    // Log login & fetch active permissions in parallel to reduce login latency
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "";
-    await query(`
-      INSERT INTO user_activity_logs (
-        user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
-      ) VALUES ($1, $2, $3, $4, 'Authentication', 'LOGIN', 'User', $5, null, 'User logged in successfully', $6)
-    `, [
-      user.id, user.name, user.role, user.lab_name || "Aura Biobank Admin Center", 
-      String(user.id), clientIp
+    const [, permsRes] = await Promise.all([
+      query(`
+        INSERT INTO user_activity_logs (
+          user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
+        ) VALUES ($1, $2, $3, $4, 'Authentication', 'LOGIN', 'User', $5, null, 'User logged in successfully', $6)
+      `, [
+        user.id, user.name, user.role, user.lab_name || "Aura Biobank Admin Center",
+        String(user.id), clientIp
+      ]),
+      query(`
+        SELECT p.permission_name FROM user_permissions up
+        JOIN permissions p ON up.permission_id = p.permission_id
+        WHERE up.user_id = $1
+        UNION
+        SELECT p.permission_name FROM role_permissions rp
+        JOIN permissions p ON rp.permission_id = p.permission_id
+        WHERE rp.role_id = $2
+      `, [user.id, user.role_id])
     ]);
-
-    // Fetch all active permissions for this user
-    const permsRes = await query(`
-      SELECT p.permission_name FROM user_permissions up
-      JOIN permissions p ON up.permission_id = p.permission_id
-      WHERE up.user_id = $1
-      UNION
-      SELECT p.permission_name FROM role_permissions rp
-      JOIN permissions p ON rp.permission_id = p.permission_id
-      WHERE rp.role_id = $2
-    `, [user.id, user.role_id]);
     const userPermissions = permsRes.rows.map(row => row.permission_name);
 
     res.json({
@@ -156,33 +156,33 @@ export async function verifyOtp(req, res, next) {
  */
 export async function getProfile(req, res, next) {
   try {
-    const userResult = await query(
-      `SELECT u.*, r.role_name as role, l.name as lab_name, COALESCE(loc.location_name, l.location_address, '') as lab_location 
-       FROM users u 
-       LEFT JOIN roles r ON u.role_id = r.role_id
-       LEFT JOIN labs l ON u.lab_id = l.id 
-       LEFT JOIN user_locations ul ON u.id = ul.user_id
-       LEFT JOIN locations loc ON ul.location_id = loc.location_id
-       WHERE u.id = $1`,
-      [req.user.userId]
-    );
+    const [userResult, permsRes] = await Promise.all([
+      query(
+        `SELECT u.*, r.role_name as role, l.name as lab_name, COALESCE(loc.location_name, l.location_address, '') as lab_location 
+         FROM users u 
+         LEFT JOIN roles r ON u.role_id = r.role_id
+         LEFT JOIN labs l ON u.lab_id = l.id 
+         LEFT JOIN user_locations ul ON u.id = ul.user_id
+         LEFT JOIN locations loc ON ul.location_id = loc.location_id
+         WHERE u.id = $1`,
+        [req.user.userId]
+      ),
+      query(`
+        SELECT p.permission_name FROM user_permissions up
+        JOIN permissions p ON up.permission_id = p.permission_id
+        WHERE up.user_id = $1
+        UNION
+        SELECT p.permission_name FROM role_permissions rp
+        JOIN permissions p ON rp.permission_id = p.permission_id
+        WHERE rp.role_id = (SELECT role_id FROM users WHERE id = $1)
+      `, [req.user.userId])
+    ]);
 
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
     const user = userResult.rows[0];
-
-    // Fetch active permissions
-    const permsRes = await query(`
-      SELECT p.permission_name FROM user_permissions up
-      JOIN permissions p ON up.permission_id = p.permission_id
-      WHERE up.user_id = $1
-      UNION
-      SELECT p.permission_name FROM role_permissions rp
-      JOIN permissions p ON rp.permission_id = p.permission_id
-      WHERE rp.role_id = $2
-    `, [user.id, user.role_id]);
     const userPermissions = permsRes.rows.map(row => row.permission_name);
 
     res.json({

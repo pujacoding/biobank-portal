@@ -4,6 +4,7 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import { initDb } from './utils/dbInit.js';
+import { startDbKeepAlive } from './config/db.js';
 import errorHandler from './middleware/errorHandler.js';
 
 // Routes
@@ -70,6 +71,7 @@ const startServer = async () => {
   try {
     // Bootstrap tables & seeds
     await initDb();
+    startDbKeepAlive();
 
     app.listen(PORT, () => {
       console.log(`[SERVER] Running on port ${PORT}`);

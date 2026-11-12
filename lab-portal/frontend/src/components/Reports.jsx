@@ -411,24 +411,33 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
   const [qcVerdict, setQcVerdict] = useState('All');
   const [freezerUnit, setFreezerUnit] = useState('All');
 
+  const abortControllerRef = React.useRef(null);
+
   // Trigger fetch when report type, page, pageSize, or applied filters change
-  const fetchReportData = async () => {
+  const fetchReportData = async (overrides = {}) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     try {
       const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const queryParams = new URLSearchParams({
-        page,
-        pageSize,
-        search,
-        dateFrom,
-        dateTo,
-        status,
-        specimenType,
-        qcVerdict,
-        freezerUnit
+        page: overrides.page ?? page,
+        pageSize: overrides.pageSize ?? pageSize,
+        search: overrides.search ?? search,
+        dateFrom: overrides.dateFrom ?? dateFrom,
+        dateTo: overrides.dateTo ?? dateTo,
+        status: overrides.status ?? status,
+        specimenType: overrides.specimenType ?? specimenType,
+        qcVerdict: overrides.qcVerdict ?? qcVerdict,
+        freezerUnit: overrides.freezerUnit ?? freezerUnit
       });
 
       const response = await fetch(`${backendUrl}/api/reports/${activeReport}?${queryParams.toString()}`, {
+        signal: controller.signal,
         headers: {
           'Authorization': `Bearer ${token}`,
           ...(activeLab ? { 'x-active-lab-id': activeLab } : {})
@@ -444,61 +453,83 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
         console.error("Failed to load report data:", data.error);
       }
     } catch (error) {
-      console.error("Error fetching report data:", error);
+      if (error.name !== 'AbortError') {
+        console.error("Error fetching report data:", error);
+      }
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchReportData();
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [activeReport, page, pageSize]);
 
   const handleApplyFilters = () => {
-    setPage(1);
-    fetchReportData();
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      fetchReportData({ page: 1 });
+    }
   };
 
   const handleResetFilters = () => {
-    setSearch('');
-    setDateFrom('');
-    setDateTo('');
-    setStatus('All');
-    setSpecimenType('All');
-    setQcVerdict('All');
-    setFreezerUnit('All');
-    setPage(1);
-    // Use timeout to let state updates apply before fetching
-    setTimeout(() => {
-      fetchReportData();
-    }, 50);
+    const reset = {
+      search: '',
+      dateFrom: '',
+      dateTo: '',
+      status: 'All',
+      specimenType: 'All',
+      qcVerdict: 'All',
+      freezerUnit: 'All',
+      page: 1
+    };
+    setSearch(reset.search);
+    setDateFrom(reset.dateFrom);
+    setDateTo(reset.dateTo);
+    setStatus(reset.status);
+    setSpecimenType(reset.specimenType);
+    setQcVerdict(reset.qcVerdict);
+    setFreezerUnit(reset.freezerUnit);
+    if (page !== 1) {
+      setPage(1);
+    }
+    fetchReportData(reset);
   };
 
   const handleQuickDatePreset = (preset) => {
     const today = new Date();
     const todayStr = today.toLocaleDateString('en-CA');
+    let nextFrom = '';
+    let nextTo = '';
     if (preset === 'today') {
-      setDateFrom(todayStr);
-      setDateTo(todayStr);
+      nextFrom = todayStr;
+      nextTo = todayStr;
     } else if (preset === 'yesterday') {
       const yest = new Date(today);
       yest.setDate(yest.getDate() - 1);
       const yestStr = yest.toLocaleDateString('en-CA');
-      setDateFrom(yestStr);
-      setDateTo(yestStr);
+      nextFrom = yestStr;
+      nextTo = yestStr;
     } else if (preset === '7days') {
       const past7 = new Date(today);
       past7.setDate(past7.getDate() - 7);
-      setDateFrom(past7.toLocaleDateString('en-CA'));
-      setDateTo(todayStr);
-    } else if (preset === 'clear') {
-      setDateFrom('');
-      setDateTo('');
+      nextFrom = past7.toLocaleDateString('en-CA');
+      nextTo = todayStr;
     }
-    setPage(1);
-    setTimeout(() => {
-      fetchReportData();
-    }, 50);
+    setDateFrom(nextFrom);
+    setDateTo(nextTo);
+    if (page !== 1) {
+      setPage(1);
+    }
+    fetchReportData({ dateFrom: nextFrom, dateTo: nextTo, page: 1 });
   };
 
   const toggleGroup = (groupId) => {

@@ -2,6 +2,77 @@ import jwt from 'jsonwebtoken';
 import { query } from '../services/dbService.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'aura-secret-key-2026';
+const AUTH_CACHE_TTL_MS = 30000;
+const userAuthCache = new Map();
+
+/**
+ * Invalidate cached user status/permissions (call after user/role/permission mutations).
+ * @param {number|string} [userId]
+ */
+export function invalidatePermissionCache(userId) {
+  if (userId !== undefined && userId !== null) {
+    userAuthCache.delete(Number(userId));
+    userAuthCache.delete(String(userId));
+  } else {
+    userAuthCache.clear();
+  }
+}
+
+async function getUserAuthContext(userId) {
+  const key = Number(userId) || userId;
+  const cached = userAuthCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached;
+  }
+
+  const res = await query(`
+    SELECT
+      u.id,
+      u.role_id,
+      u.status,
+      u.email,
+      u.name,
+      r.role_name,
+      COALESCE(
+        (
+          SELECT ARRAY_AGG(DISTINCT p_name)
+          FROM (
+            SELECT p.permission_name AS p_name
+            FROM user_permissions up
+            JOIN permissions p ON up.permission_id = p.permission_id
+            WHERE up.user_id = u.id
+            UNION
+            SELECT p.permission_name AS p_name
+            FROM role_permissions rp
+            JOIN permissions p ON rp.permission_id = p.permission_id
+            WHERE rp.role_id = u.role_id
+          ) perms
+        ),
+        ARRAY[]::text[]
+      ) AS permissions
+    FROM users u
+    LEFT JOIN roles r ON u.role_id = r.role_id
+    WHERE u.id = $1
+  `, [userId]);
+
+  if (res.rows.length === 0) {
+    userAuthCache.delete(key);
+    return null;
+  }
+
+  const row = res.rows[0];
+  const ctx = {
+    roleId: parseInt(row.role_id, 10),
+    roleName: row.role_name,
+    status: row.status,
+    email: row.email,
+    name: row.name,
+    permissions: new Set(row.permissions || []),
+    expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+  };
+  userAuthCache.set(key, ctx);
+  return ctx;
+}
 
 /**
  * Middleware: Authenticate incoming requests using JWT
@@ -41,41 +112,29 @@ export function authenticateToken(req, res, next) {
 export function requirePermission(permissionName, moduleName) {
   return async (req, res, next) => {
     try {
-      const userCheck = await query(`
-        SELECT u.role_id, u.status, r.role_name 
-        FROM users u
-        LEFT JOIN roles r ON u.role_id = r.role_id
-        WHERE u.id = $1
-      `, [req.user.userId]);
-
-      if (userCheck.rows.length === 0) {
+      const ctx = await getUserAuthContext(req.user.userId);
+      if (!ctx) {
         return res.status(401).json({ error: "User profile no longer exists" });
       }
 
-      const user = userCheck.rows[0];
-      if (user.status !== 'Active') {
-        return res.status(403).json({ error: `Access Denied: User account is ${user.status}` });
+      if (ctx.status !== 'Active') {
+        return res.status(403).json({ error: `Access Denied: User account is ${ctx.status}` });
       }
 
+      // Enrich req.user so downstream controllers avoid redundant user lookups
+      req.user.roleId = ctx.roleId;
+      req.user.role = req.user.role || ctx.roleName;
+      req.user.email = ctx.email;
+      req.user.name = ctx.name;
+
       // Super Admin bypass (role_id 1 is Super Admin)
-      if (parseInt(user.role_id, 10) === 1) {
+      if (ctx.roleId === 1) {
         return next();
       }
 
-      // Dynamic lookup: Check direct user overrides or role matrix permissions
-      const permCheck = await query(`
-        SELECT 1 FROM user_permissions up
-        JOIN permissions p ON up.permission_id = p.permission_id
-        WHERE up.user_id = $1 AND p.permission_name = $2
-        UNION
-        SELECT 1 FROM role_permissions rp
-        JOIN permissions p ON rp.permission_id = p.permission_id
-        WHERE rp.role_id = $3 AND p.permission_name = $4
-      `, [req.user.userId, permissionName, user.role_id, permissionName]);
-
-      if (permCheck.rows.length === 0) {
-        return res.status(403).json({ 
-          error: `Access Denied: Required permission: '${permissionName}' in module '${moduleName}'` 
+      if (!ctx.permissions.has(permissionName)) {
+        return res.status(403).json({
+          error: `Access Denied: Required permission: '${permissionName}' in module '${moduleName}'`
         });
       }
 
@@ -94,23 +153,10 @@ export function requirePermission(permissionName, moduleName) {
  */
 export async function checkUserPermission(userId, permissionName) {
   try {
-    const userCheck = await query("SELECT role_id FROM users WHERE id = $1", [userId]);
-    if (userCheck.rows.length === 0) return false;
-    
-    const roleId = parseInt(userCheck.rows[0].role_id, 10);
-    if (roleId === 1) return true; // Super Admin bypass
-
-    const permCheck = await query(`
-      SELECT 1 FROM user_permissions up
-      JOIN permissions p ON up.permission_id = p.permission_id
-      WHERE up.user_id = $1 AND p.permission_name = $2
-      UNION
-      SELECT 1 FROM role_permissions rp
-      JOIN permissions p ON rp.permission_id = p.permission_id
-      WHERE rp.role_id = $3 AND p.permission_name = $4
-    `, [userId, permissionName, roleId, permissionName]);
-
-    return permCheck.rows.length > 0;
+    const ctx = await getUserAuthContext(userId);
+    if (!ctx || ctx.status !== 'Active') return false;
+    if (ctx.roleId === 1) return true;
+    return ctx.permissions.has(permissionName);
   } catch (err) {
     console.error("Helper permission check failed:", err);
     return false;
