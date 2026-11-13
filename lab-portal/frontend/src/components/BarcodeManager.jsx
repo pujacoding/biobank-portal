@@ -83,11 +83,6 @@ export default function BarcodeManager({
   const [reprintNotes, setReprintNotes] = useState('');
   const [voidReason, setVoidReason] = useState('');
   const [replaceReason, setReplaceReason] = useState('');
-  const [storageFreezer, setStorageFreezer] = useState('ULT-03');
-  const [storageRack, setStorageRack] = useState('Rack A');
-  const [storageBox, setStorageBox] = useState('Box 01');
-  const [storagePosition, setStoragePosition] = useState('A1');
-  const [storageNotes, setStorageNotes] = useState('');
   const [shipmentDestination, setShipmentDestination] = useState('AURA Central Biobank - LN2 Cryo Tank Yard');
   const [newAliquotCount, setNewAliquotCount] = useState(2);
   const [newAliquotVol, setNewAliquotVol] = useState(1.0);
@@ -667,83 +662,7 @@ export default function BarcodeManager({
     }
   };
 
-  // ========================================================
-  // STORAGE ASSIGNMENT / MOVE WORKFLOW
-  // ========================================================
 
-  const handleOpenStorage = (barcode) => {
-    setTargetBarcode(barcode);
-    setStorageFreezer('ULT-03');
-    setStorageRack('Rack A');
-    setStorageBox('Box 01');
-    setStoragePosition('A1');
-    setStorageNotes('');
-    setActiveModal('storage');
-  };
-
-  const handleSubmitStorage = async (e) => {
-    e.preventDefault();
-    if (!targetBarcode) return;
-
-    try {
-      const location = `${storageFreezer} > ${storageRack} > ${storageBox} > Position ${storagePosition}`;
-      const response = await fetch(`${backendUrl}/api/barcode/assign-storage`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          barcode_value: targetBarcode.barcode_value,
-          location,
-          freezer: storageFreezer,
-          rack: storageRack,
-          box: storageBox,
-          position: storagePosition,
-          notes: storageNotes
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        if (response.status === 409) {
-          alert(`Position ${storagePosition} is already occupied! Please choose an empty position.`);
-          return;
-        }
-        throw new Error(data.error || 'Failed to assign storage');
-      }
-
-      setActiveModal(null);
-      setSuccess(`Storage coordinates assigned: ${location}`);
-
-      if (scannedResult && (scannedResult.barcode_value === targetBarcode.barcode_value || scannedResult.sample_id === targetBarcode.sample_id)) {
-        setScannedResult(prev => ({
-          ...prev,
-          storage_location: location,
-          current_storage_location: location,
-          sample_location: location,
-          status: 'STORED'
-        }));
-      }
-
-      if (detailedBarcode && (detailedBarcode.barcode?.barcode_value === targetBarcode.barcode_value || detailedBarcode.barcode?.sample_id === targetBarcode.sample_id)) {
-        setDetailedBarcode(prev => ({
-          ...prev,
-          barcode: {
-            ...prev.barcode,
-            storage_location: location,
-            sample_location: location,
-            status: 'STORED'
-          }
-        }));
-      }
-
-      fetchRegistryData();
-      if (onBarcodeAction) onBarcodeAction();
-    } catch (err) {
-      alert("Storage Assignment Error: " + err.message);
-    }
-  };
 
   // ========================================================
   // SHIPMENT INTEGRATION WORKFLOW
@@ -1470,17 +1389,7 @@ export default function BarcodeManager({
                                 </button>
                               )}
 
-                              {/* Storage */}
-                              {!isVoided && isTechnician && (
-                                <button
-                                  className="btn btn-secondary"
-                                  onClick={() => handleOpenStorage(row)}
-                                  style={{ padding: '4px 8px', fontSize: '11px', color: 'var(--accent-success)' }}
-                                  title={isStored ? "Move Storage" : "Assign Storage"}
-                                >
-                                  📍 {isStored ? "Move" : "Store"}
-                                </button>
-                              )}
+
 
                               {/* Aliquot */}
                               {!isVoided && row.barcode_type !== 'Aliquot' && isTechnician && (
@@ -2224,17 +2133,10 @@ export default function BarcodeManager({
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
                     <button
                       className="btn btn-secondary"
-                      onClick={() => handleOpenStorage(scannedResult)}
-                      style={{ padding: '8px 14px', fontSize: '12px', color: 'var(--accent-success)' }}
-                    >
-                      📍 {scannedResult.storage_location ? "Move Sample" : "Assign Storage"}
-                    </button>
-                    <button
-                      className="btn btn-secondary"
                       onClick={() => handleOpenShipment(scannedResult)}
                       style={{ padding: '8px 14px', fontSize: '12px', color: '#38bdf8' }}
                     >
-                      📦 Add to Shipment
+                      📦 Add to Shipment / Transfer
                     </button>
                     <button
                       className="btn btn-secondary"
@@ -2460,18 +2362,6 @@ export default function BarcodeManager({
             {/* Quick Actions inside Details Modal */}
             {detailedBarcode.barcode.status !== 'VOIDED' && (
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingBottom: '4px' }}>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    handleOpenStorage({
-                      ...detailedBarcode.barcode,
-                      storage_location: detailedBarcode.barcode.current_storage_location || detailedBarcode.barcode.storage_location || detailedBarcode.barcode.sample_location
-                    });
-                  }}
-                  style={{ padding: '6px 14px', fontSize: '12px', color: 'var(--accent-success)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  📍 {(detailedBarcode.barcode.current_storage_location || detailedBarcode.barcode.storage_location || detailedBarcode.barcode.sample_location) ? 'Move Storage' : 'Assign Storage'}
-                </button>
                 <button
                   className="btn btn-secondary"
                   onClick={() => {
@@ -2981,170 +2871,7 @@ export default function BarcodeManager({
         </div>
       )}
 
-      {/* ========================================================
-          MODAL 6: STORAGE ASSIGNMENT / MOVE MODAL
-          ======================================================== */}
-      {activeModal === 'storage' && targetBarcode && (
-        <div className="modal-overlay" style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}>
-          <div className="glass-card" style={{
-            width: '100%',
-            maxWidth: '500px',
-            padding: '24px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '800' }}>
-              Assign Storage: {targetBarcode.barcode_value}
-            </h3>
 
-            <form onSubmit={handleSubmitStorage} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '4px', display: 'block' }}>
-                    Freezer Unit *
-                  </label>
-                  <select
-                    value={storageFreezer}
-                    onChange={(e) => setStorageFreezer(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 'var(--border-radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '12px'
-                    }}
-                  >
-                    <option value="ULT-03">ULT-03 (-80°C Freezer Wing)</option>
-                    <option value="LN2-01">LN2-01 (Cryogenic Tank Yard -196°C)</option>
-                    <option value="CRYO-02">CRYO-02 (Secondary Bio-Bank)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '4px', display: 'block' }}>
-                    Rack / Shelf *
-                  </label>
-                  <select
-                    value={storageRack}
-                    onChange={(e) => setStorageRack(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 'var(--border-radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '12px'
-                    }}
-                  >
-                    <option value="Rack A">Rack A</option>
-                    <option value="Rack B">Rack B</option>
-                    <option value="Rack C">Rack C</option>
-                    <option value="Shelf 1">Shelf 1</option>
-                    <option value="Shelf 2">Shelf 2</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '4px', display: 'block' }}>
-                    Box ID *
-                  </label>
-                  <select
-                    value={storageBox}
-                    onChange={(e) => setStorageBox(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 'var(--border-radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '12px'
-                    }}
-                  >
-                    <option value="Box 01">Box 01</option>
-                    <option value="Box 02">Box 02</option>
-                    <option value="Box 03">Box 03</option>
-                    <option value="Box 04">Box 04</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '4px', display: 'block' }}>
-                    Position Coordinate *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. A1, B7, F6..."
-                    value={storagePosition}
-                    onChange={(e) => setStoragePosition(e.target.value.toUpperCase())}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 'var(--border-radius-sm)',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-primary)',
-                      color: 'var(--text-primary)',
-                      fontSize: '12px',
-                      textTransform: 'uppercase'
-                    }}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '600', marginBottom: '4px', display: 'block' }}>
-                  Location Preview
-                </label>
-                <div style={{
-                  padding: '10px 12px',
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  borderRadius: 'var(--border-radius-sm)',
-                  fontSize: '12px',
-                  color: 'var(--accent-cyan)',
-                  fontWeight: '700'
-                }}>
-                  📍 {storageFreezer} &gt; {storageRack} &gt; {storageBox} &gt; Position {storagePosition}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '6px' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setActiveModal(null)}
-                  style={{ padding: '8px 16px', fontSize: '12px' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700' }}
-                >
-                  Confirm Storage Coordinates
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================
           MODAL 7: ALIQUOT CREATION MODAL

@@ -1,13 +1,25 @@
 import React, { useState, useEffect } from 'react';
 
-export default function InventoryStorage({ samples, backendUrl, token, user, onStorageAction, activeLabId, activeLabName }) {
+export default function InventoryStorage({ 
+  samples = [], 
+  backendUrl, 
+  token, 
+  user, 
+  onStorageAction, 
+  activeLabId, 
+  activeLabName,
+  preSelectedSampleId = '',
+  setPreSelectedSampleId,
+  setActiveTab
+}) {
   const [activeUnit, setActiveUnit] = useState('ULT-03');
   const [selectedWell, setSelectedWell] = useState(null);
   const [selectedSpecimen, setSelectedSpecimen] = useState(null);
+  const [successMessage, setSuccessMessage] = useState('');
   
   // Storage Form States
   const [depBarcode, setDepBarcode] = useState('');
-  const [depQuality, setDepQuality] = useState('');
+  const [depQuality, setDepQuality] = useState('Optimal (A260/A280: 1.85, Clear)');
   const [depDiagnosis, setDepDiagnosis] = useState('Healthy Control');
   
   // QC Form States
@@ -34,27 +46,59 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
 
   // Filter samples that are verified and barcode-generated, but NOT yet stored (ready for deposition)
   const availableToDeposit = samples.filter(s => {
-    const isBaseAvailable = s.consent_status === 'Verified' && 
-      s.barcode_text && 
-      (!s.location || s.retrieval_status === 'Retrieved');
-
-    if (!isBaseAvailable) return false;
-
-    // A sample that is currently shipped (in transit) cannot be deposited
-    if (s.status === 'Shipped') {
+    if (s.consent_status === 'Withdrawn') return false;
+    if (s.status === 'Shipped' || s.status === 'In Transit' || s.status === 'Quarantined' || s.status === 'Disposed' || s.status === 'Exhausted') {
       return false;
     }
 
-    // A sample received at a depot must match the corresponding freezer unit (supporting direct matched IDs and old depot names)
-    if (s.status === 'Received') {
-      const isMatch = s.shipment_destination === activeUnit ||
-        (activeUnit === 'LN2-01' && s.shipment_destination === 'AURA Central Biobank - LN2 Cryo Tank Yard') ||
-        (activeUnit === 'ULT-03' && s.shipment_destination === 'AURA Central Biobank - ULT Storage Wing');
-      return isMatch;
-    }
+    // Must not already be stored (unless retrieved)
+    const notStored = !s.location || s.retrieval_status === 'Retrieved';
+    if (!notStored) return false;
 
-    return true;
+    // Must be ready for deposition: either 'Received', 'Accepted', 'Consent Verified', or 'Barcode Generated'
+    const isReadyStatus = s.status === 'Received' || s.status === 'Accepted' || s.status === 'Barcode Generated' || s.consent_status === 'Verified';
+    if (!isReadyStatus) return false;
+
+    // Allowed specimen types check
+    return allowedTypes.includes(s.specimen_type) || s.status === 'Received' || s.status === 'Accepted';
   });
+
+  const findFirstEmptyWell = () => {
+    for (const r of rows) {
+      for (const c of cols) {
+        const wellId = `${r}${c}`;
+        const isOccupied = storedSamples.some(s => s.location && s.location.endsWith(`Well ${wellId}`));
+        if (!isOccupied) return wellId;
+      }
+    }
+    return null;
+  };
+
+  const handleQuickAllocate = (sampleItem) => {
+    const emptyWell = findFirstEmptyWell();
+    if (!emptyWell) {
+      alert(`Freezer Unit ${activeUnit} microplate grid is currently full! Please select another unit.`);
+      return;
+    }
+    setSelectedWell(emptyWell);
+    setSelectedSpecimen(null);
+    setDepBarcode(sampleItem.id);
+    setDepQuality('Optimal (A260/A280: 1.85, Clear)');
+    setDepDiagnosis(sampleItem.diagnosis || 'Healthy Control');
+  };
+
+  // Auto-allocate if preSelectedSampleId is passed from Transfer workflow
+  useEffect(() => {
+    if (preSelectedSampleId) {
+      const match = samples.find(s => s.id === preSelectedSampleId || s.barcode_text === preSelectedSampleId || s.barcode_value === preSelectedSampleId);
+      if (match) {
+        handleQuickAllocate(match);
+      }
+      if (setPreSelectedSampleId) {
+        setPreSelectedSampleId('');
+      }
+    }
+  }, [preSelectedSampleId, samples]);
 
   const handleWellClick = (wellId) => {
     // Check if well is occupied
@@ -77,9 +121,11 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
       setQcStatus(matchingSample.qc_status || 'Verified');
     } else {
       setSelectedSpecimen(null);
-      setDepBarcode('');
-      setDepQuality('');
-      setDepDiagnosis('Healthy Control');
+      // If there are available samples to deposit, pick the first one by default for convenience
+      const firstAvail = availableToDeposit[0];
+      setDepBarcode(firstAvail ? firstAvail.id : '');
+      setDepQuality('Optimal (A260/A280: 1.85, Clear)');
+      setDepDiagnosis(firstAvail?.diagnosis || 'Healthy Control');
     }
   };
 
@@ -106,11 +152,14 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to deposit specimen');
 
-      alert("Specimen successfully deposited and registered in cryogenic grid.");
+      setSuccessMessage(`Specimen ${depBarcode} successfully stored in Well ${selectedWell} (${activeUnit})`);
+      setTimeout(() => setSuccessMessage(''), 4500);
+
       setSelectedWell(null);
+      setDepBarcode('');
       if (onStorageAction) onStorageAction();
     } catch (err) {
-      alert("Error: " + err.message);
+      alert("Storage Allocation Error: " + err.message);
     }
   };
 
@@ -243,6 +292,22 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
         </div>
       </div>
 
+      {successMessage && (
+        <div className="glass-card" style={{ 
+          background: 'rgba(16, 185, 129, 0.1)', 
+          border: '1px solid #10B981', 
+          color: '#34d399', 
+          padding: '12px 18px', 
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontWeight: '600'
+        }}>
+          <span>✅</span>
+          <span>{successMessage}</span>
+        </div>
+      )}
       {relocateMode && (
         <div className="glass-card" style={{ background: 'rgba(168, 85, 247, 0.08)', borderColor: 'var(--accent-purple)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px' }}>
           <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
@@ -480,34 +545,57 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
               
               {availableToDeposit.length === 0 ? (
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '24px 0', textAlign: 'center' }}>
-                  No verified specimens with barcodes are currently pending storage. Verify consents and print barcode labels first!
+                  No verified or received specimens are currently pending storage. Receive transfers and verify barcodes first!
                 </div>
               ) : (
                 <form onSubmit={handleDepositSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div className="form-group">
-                    <label htmlFor="dep-barcode-select">Select Pending Barcode *</label>
+                    <label htmlFor="dep-barcode-select">Select Pending Specimen *</label>
                     <select 
                       id="dep-barcode-select" 
                       className="form-control" 
                       required 
                       value={depBarcode} 
-                      onChange={(e) => setDepBarcode(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setDepBarcode(val);
+                        const match = availableToDeposit.find(s => s.id === val || s.barcode_text === val || s.barcode_value === val);
+                        if (match) {
+                          setDepDiagnosis(match.diagnosis || 'Healthy Control');
+                        }
+                      }}
                     >
-                      <option value="">-- Select Specimen --</option>
-                      {availableToDeposit
-                        .filter(s => {
-                          const isReceivedAtUnit = s.status === 'Received' && (
-                            s.shipment_destination === activeUnit ||
-                            (activeUnit === 'LN2-01' && s.shipment_destination === 'AURA Central Biobank - LN2 Cryo Tank Yard') ||
-                            (activeUnit === 'ULT-03' && s.shipment_destination === 'AURA Central Biobank - ULT Storage Wing')
-                          );
-                          return allowedTypes.includes(s.specimen_type) || isReceivedAtUnit;
-                        })
-                        .map(s => (
-                          <option key={s.id} value={s.id}>{s.id} ({s.specimen_type} - Subject: {s.subject_id})</option>
-                        ))
-                      }
+                      <option value="">-- Choose Specimen to Store --</option>
+                      {availableToDeposit.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.id} — {s.specimen_type} ({s.sample_volume || '2.0'} {s.volume_unit || 'mL'}) [{s.status || 'Received'}]
+                        </option>
+                      ))}
                     </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="dep-barcode-manual">Scan or Enter Barcode ID</label>
+                    <input 
+                      type="text"
+                      id="dep-barcode-manual"
+                      className="form-control"
+                      placeholder="Scan or type barcode to auto-select..."
+                      value={depBarcode}
+                      onChange={(e) => {
+                        const val = e.target.value.trim();
+                        setDepBarcode(val);
+                        const match = availableToDeposit.find(s => 
+                          s.id.toUpperCase() === val.toUpperCase() || 
+                          (s.barcode_text && s.barcode_text.toUpperCase() === val.toUpperCase()) ||
+                          (s.barcode_value && s.barcode_value.toUpperCase() === val.toUpperCase())
+                        );
+                        if (match) {
+                          setDepBarcode(match.id);
+                          setDepDiagnosis(match.diagnosis || 'Healthy Control');
+                        }
+                      }}
+                    />
                   </div>
 
                   <div className="form-group">
@@ -517,7 +605,7 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
                       id="dep-quality-input" 
                       className="form-control" 
                       required 
-                      placeholder="e.g. RIN: 9.2, Viability: 96%" 
+                      placeholder="e.g. Optimal, RIN: 9.2, Viability: 96%" 
                       value={depQuality} 
                       onChange={(e) => setDepQuality(e.target.value)}
                     />
@@ -540,14 +628,94 @@ export default function InventoryStorage({ samples, backendUrl, token, user, onS
                     </select>
                   </div>
 
-                  <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '10px', marginTop: '6px' }}>
-                    Secure Grid Deposition
+                  <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '10px', marginTop: '6px', fontWeight: '700' }}>
+                    Confirm Storage Coordinates (Well {selectedWell})
                   </button>
                 </form>
               )}
             </div>
           )}
         </div>
+      </div>
+
+      {/* AWAITING ALLOCATION SECTION */}
+      <div className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: '800', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>📦</span> Verified Specimens Awaiting Storage Allocation
+              <span className="badge badge-verified" style={{ fontSize: '11px', padding: '2px 8px' }}>
+                {availableToDeposit.length} Ready
+              </span>
+            </h3>
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+              Click <strong>"Quick Allocate"</strong> on any accepted specimen to auto-assign the first open slot in this freezer rack.
+            </p>
+          </div>
+        </div>
+
+        {availableToDeposit.length === 0 ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '13px' }}>
+            All eligible specimens have been allocated to freezer storage slots.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>
+                  <th style={{ padding: '10px 12px' }}>Sample ID</th>
+                  <th style={{ padding: '10px 12px' }}>Barcode</th>
+                  <th style={{ padding: '10px 12px' }}>Specimen Type</th>
+                  <th style={{ padding: '10px 12px' }}>Volume</th>
+                  <th style={{ padding: '10px 12px' }}>Status</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Allocation Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {availableToDeposit.map(sample => (
+                  <tr key={sample.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: '700', fontFamily: 'monospace' }}>
+                      {sample.id}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: 'var(--accent-cyan)' }}>
+                      {sample.barcode_text || sample.active_barcode || sample.barcode_value || '--'}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span style={{ 
+                        padding: '2px 8px', 
+                        borderRadius: '4px', 
+                        fontSize: '11px', 
+                        fontWeight: '600',
+                        background: 'rgba(0, 242, 254, 0.1)',
+                        color: 'var(--accent-cyan)'
+                      }}>
+                        {sample.specimen_type}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', color: 'var(--text-secondary)' }}>
+                      {sample.sample_volume || '2.0'} {sample.volume_unit || 'mL'}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span className={`badge ${sample.status === 'Received' ? 'badge-verified' : 'badge-pending'}`}>
+                        {sample.status || 'Verified'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => handleQuickAllocate(sample)}
+                        style={{ padding: '5px 12px', fontSize: '11px', color: 'var(--accent-success)', borderColor: 'var(--accent-success)', fontWeight: '700' }}
+                      >
+                        📍 Quick Allocate Well
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
