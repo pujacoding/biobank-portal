@@ -190,7 +190,7 @@ export async function withdrawDonorConsent(req, res, next) {
           [sample.id]
         );
         await client.query(
-          "UPDATE barcodes SET status = 'Inactive' WHERE sample_id = $1 AND status = 'Active'",
+          "UPDATE barcodes SET status = 'Inactive' WHERE sample_id = $1 AND status NOT IN ('VOIDED', 'Inactive')",
           [sample.id]
         );
       }
@@ -652,7 +652,7 @@ export async function traceSample(req, res, next) {
       ORDER BY ba.action_timestamp ASC
     `, [targetSampleId]);
 
-    const barcodeRes = await query("SELECT * FROM barcodes WHERE sample_id = $1 AND status = 'Active'", [targetSampleId]);
+    const barcodeRes = await query("SELECT * FROM barcodes WHERE sample_id = $1 AND status NOT IN ('VOIDED', 'Inactive')", [targetSampleId]);
 
     res.json({
       success: true,
@@ -706,21 +706,32 @@ export async function getShipments(req, res, next) {
 export async function createShipment(req, res, next) {
   const client = await getClient();
   try {
-    const { destination, barcodes, origin_lab_id } = req.body;
+    const { destination, barcodes, origin_lab_id, notes } = req.body;
     if (!destination || !barcodes || barcodes.length === 0) {
       return res.status(400).json({ error: "Missing destination or sample barcodes" });
     }
 
     await client.query('BEGIN');
 
-    // Check if any of the barcodes has withdrawn consent
+    // Resolve samples and active barcodes matching either sample ID or barcode_value
     const checkRes = await client.query(`
-      SELECT id, consent_status FROM samples WHERE id = ANY($1::varchar[])
+      SELECT s.id as sample_id, s.consent_status, s.status as sample_status,
+             b.barcode_id, b.barcode_value
+      FROM samples s
+      LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status NOT IN ('VOIDED', 'Inactive')
+      WHERE s.id = ANY($1::varchar[]) OR b.barcode_value = ANY($1::varchar[])
     `, [barcodes]);
+
+    if (checkRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "No matching specimen records found for provided identifiers." });
+    }
+
+    // Check if any of the specimens has withdrawn consent
     for (const row of checkRes.rows) {
       if (row.consent_status === 'Withdrawn') {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: `Shipment Blocked: Specimen '${row.id}' has withdrawn consent.` });
+        return res.status(400).json({ error: `Shipment Blocked: Specimen '${row.sample_id}' has withdrawn consent.` });
       }
     }
 
@@ -730,19 +741,32 @@ export async function createShipment(req, res, next) {
       VALUES ($1, $2, $3, 'In Transit', CURRENT_TIMESTAMP)
     `, [id, origin_lab_id || 1, destination]);
 
-    for (const barcode of barcodes) {
-      await client.query("INSERT INTO shipment_samples (shipment_id, sample_id) VALUES ($1, $2)", [id, barcode]);
-      await client.query("UPDATE samples SET status = 'Shipped' WHERE id = $1", [barcode]);
-      
+    const processedSampleIds = new Set();
+    const userId = req.user?.userId || 1;
+
+    for (const row of checkRes.rows) {
+      if (processedSampleIds.has(row.sample_id)) continue;
+      processedSampleIds.add(row.sample_id);
+
+      await client.query(
+        "INSERT INTO shipment_samples (shipment_id, sample_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        [id, row.sample_id]
+      );
+      await client.query("UPDATE samples SET status = 'Shipped' WHERE id = $1", [row.sample_id]);
+
+      if (row.barcode_id) {
+        await client.query("UPDATE barcodes SET status = 'IN_TRANSIT' WHERE barcode_id = $1", [row.barcode_id]);
+      }
+
       await client.query(`
-        INSERT INTO barcode_audit (sample_id, action_type, reason, performed_by)
-        VALUES ($1, 'Shipment Dispatch', 'Dispatched in shipment: ' || $2, 1)
-      `, [barcode, id]);
+        INSERT INTO barcode_audit (sample_id, barcode_id, barcode_value, action_type, reason, performed_by)
+        VALUES ($1, $2, $3, 'Shipment Dispatch', $4, $5)
+      `, [row.sample_id, row.barcode_id || null, row.barcode_value || null, `Dispatched in cargo batch ${id} to ${destination}${notes ? ` (${notes})` : ''}`, userId]);
     }
 
     await client.query('COMMIT');
 
-    res.status(201).json({ success: true, shipmentId: id });
+    res.status(201).json({ success: true, shipmentId: id, specimenCount: processedSampleIds.size });
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);
@@ -764,13 +788,15 @@ export async function receiveShipment(req, res, next) {
     await client.query("UPDATE shipments SET status = 'Received', received_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
 
     const samplesRes = await client.query("SELECT sample_id FROM shipment_samples WHERE shipment_id = $1", [id]);
+    const userId = req.user?.userId || 1;
     
     for (const row of samplesRes.rows) {
       await client.query("UPDATE samples SET status = 'Received' WHERE id = $1", [row.sample_id]);
+      await client.query("UPDATE barcodes SET status = 'VERIFIED' WHERE sample_id = $1 AND status = 'IN_TRANSIT'", [row.sample_id]);
       await client.query(`
         INSERT INTO barcode_audit (sample_id, action_type, reason, performed_by)
-        VALUES ($1, 'Shipment Receiving', 'Received from shipment: ' || $2, 1)
-      `, [row.sample_id, id]);
+        VALUES ($1, 'Shipment Receiving', 'Received from shipment: ' || $2, $3)
+      `, [row.sample_id, id, userId]);
     }
 
     await client.query('COMMIT');

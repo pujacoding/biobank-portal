@@ -5,7 +5,7 @@ import Dashboard from './components/Dashboard';
 import SampleRegistration from './components/SampleRegistration';
 import SampleList from './components/SampleList';
 import ConsentManagement from './components/ConsentManagement';
-import BarcodeDashboard from './components/BarcodeDashboard';
+import BarcodeManager from './components/BarcodeManager';
 import AuditTrail from './components/AuditTrail';
 import UserManagement from './components/UserManagement';
 import BarcodePrintSettings from './components/BarcodePrintSettings';
@@ -178,24 +178,21 @@ export default function App() {
   // Fetch samples & accessible labs on load or token/activeLabId change
   useEffect(() => {
     if (token) {
-      fetchSamples(token);
-      fetchAccessibleLabs(token);
+      Promise.all([fetchSamples(token), fetchAccessibleLabs(token)]);
     }
   }, [token, activeLabId]);
 
   const handleLoginSuccess = (newToken, newUser) => {
-    setToken(newToken);
-    setUser(newUser);
     sessionStorage.setItem('aura_lab_token', newToken);
     sessionStorage.setItem('aura_lab_user', JSON.stringify(newUser));
     localStorage.removeItem('aura_lab_token');
     localStorage.removeItem('aura_lab_user');
     // If the user has a specific assigned lab, auto-set it as active
     if (newUser.lab_id !== null && newUser.lab_id !== undefined) {
-      setActiveLabId(newUser.lab_id);
-      setActiveLabName(newUser.lab_name);
       sessionStorage.setItem('aura_active_lab_id', newUser.lab_id);
       sessionStorage.setItem('aura_active_lab_name', newUser.lab_name);
+      setActiveLabId(newUser.lab_id);
+      setActiveLabName(newUser.lab_name);
     } else {
       sessionStorage.removeItem('aura_active_lab_id');
       sessionStorage.removeItem('aura_active_lab_name');
@@ -204,8 +201,8 @@ export default function App() {
       setActiveLabId('');
       setActiveLabName('');
     }
-    fetchSamples(newToken);
-    fetchAccessibleLabs(newToken);
+    setUser(newUser);
+    setToken(newToken);
   };
 
   const handleLogout = (skipBroadcast = false) => {
@@ -638,6 +635,31 @@ export default function App() {
                       <button
                         onClick={() => {
                           setActiveTab('reports');
+                          setReportsCategory('workflow');
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: 'var(--border-radius-sm)',
+                          background: activeTab === 'reports' && reportsCategory === 'workflow' ? 'rgba(0, 242, 254, 0.1)' : 'transparent',
+                          border: 'none',
+                          color: activeTab === 'reports' && reportsCategory === 'workflow' ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                          fontWeight: activeTab === 'reports' && reportsCategory === 'workflow' ? '700' : '500',
+                          fontSize: '12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        🩸 Today's Sample Collect
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => {
+                          setActiveTab('reports');
                           setReportsCategory('operations');
                         }}
                         style={{
@@ -688,7 +710,7 @@ export default function App() {
                 )}
               </li>
 
-              {(user.role === 'Lab Admin' || user.role === 'Super Admin') && (
+              {(user.role === 'Lab Admin' || user.role === 'Super Admin' || user.role === 'Lab Technician' || user.role === 'Collection Staff' || user.role === 'Biobank Staff' || hasPermission('View Barcode') || hasPermission('View Sample')) && (
                 <li>
                   <button
                     onClick={() => setActiveTab('barcode')}
@@ -899,7 +921,10 @@ export default function App() {
           alignItems: 'center',
           padding: '0 24px',
           gap: '16px',
-          flexShrink: 0
+          flexShrink: 0,
+          position: 'sticky',
+          top: 0,
+          zIndex: 100
         }}>
           {/* Active Lab Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1079,7 +1104,7 @@ export default function App() {
           )}
 
           {activeTab === 'barcode' && (
-            <BarcodeDashboard 
+            <BarcodeManager 
               samples={samples} 
               backendUrl={BACKEND_URL} 
               token={token} 

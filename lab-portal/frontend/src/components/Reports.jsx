@@ -26,6 +26,8 @@ const REPORT_GROUPS = [
     label: 'Sample Collection',
     icon: '🩸',
     items: [
+      { id: 'todays-collection', label: "Today's Sample Collect", desc: "Daily specimen collection intake log showing samples collected per day with collector details and volume metrics." },
+      { id: 'daily-collection-summary', label: 'Daily Collection Summary', desc: 'Aggregated daily collection metrics: identify which and how many samples are collected per day.' },
       { id: 'sample-collection', label: 'Sample Collection Report', desc: 'A detailed log of collected samples and volumes.' },
       { id: 'collection-summary', label: 'Collection Summary', desc: 'Aggregated collection metrics grouped by specimen type.' },
       { id: 'collection-status', label: 'Collection Status', desc: 'Breakdown of specimens by collection status.' }
@@ -147,6 +149,25 @@ const REPORT_COLUMNS = {
     { key: 'submittedBy', label: 'Submitted By' },
     { key: 'withdrawnAt', label: 'Withdrawn Date' },
     { key: 'withdrawnBy', label: 'Withdrawn By' }
+  ],
+  'todays-collection': [
+    { key: 'sampleId', label: 'Sample ID' },
+    { key: 'subjectId', label: 'Subject ID' },
+    { key: 'specimenType', label: 'Specimen Type' },
+    { key: 'volume', label: 'Volume (mL)' },
+    { key: 'containerType', label: 'Container' },
+    { key: 'collectionDate', label: 'Collection Date' },
+    { key: 'collectionTime', label: 'Time' },
+    { key: 'collector', label: 'Collected By' },
+    { key: 'workflowStatus', label: 'Workflow Status' },
+    { key: 'consentStatus', label: 'Consent Status' }
+  ],
+  'daily-collection-summary': [
+    { key: 'collectionDate', label: 'Collection Date' },
+    { key: 'totalSamples', label: 'Total Samples Collected' },
+    { key: 'totalVolume', label: 'Total Volume (mL)' },
+    { key: 'totalDonors', label: 'Unique Donors' },
+    { key: 'totalCollectors', label: 'Active Staff' }
   ],
   'sample-collection': [
     { key: 'sampleId', label: 'Sample ID' },
@@ -363,7 +384,10 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
 
   // Sync active report when category changes from sidebar
   useEffect(() => {
-    if (reportsCategory === 'operations') {
+    if (reportsCategory === 'workflow') {
+      setActiveReport('todays-collection');
+      setExpandedGroups({ 'sample-collection': true });
+    } else if (reportsCategory === 'operations') {
       setActiveReport('sample-collection');
       setExpandedGroups({ 'sample-collection': true });
     } else if (reportsCategory === 'administration') {
@@ -375,6 +399,7 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
   const [loading, setLoading] = useState(false);
   const [totalRecords, setTotalRecords] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [totalPages, setTotalPages] = useState(1);
 
   // Filters State
@@ -386,24 +411,33 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
   const [qcVerdict, setQcVerdict] = useState('All');
   const [freezerUnit, setFreezerUnit] = useState('All');
 
-  // Trigger fetch when report type, page, or applied filters change
-  const fetchReportData = async () => {
+  const abortControllerRef = React.useRef(null);
+
+  // Trigger fetch when report type, page, pageSize, or applied filters change
+  const fetchReportData = async (overrides = {}) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     try {
       const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id');
       const queryParams = new URLSearchParams({
-        page,
-        pageSize: 10,
-        search,
-        dateFrom,
-        dateTo,
-        status,
-        specimenType,
-        qcVerdict,
-        freezerUnit
+        page: overrides.page ?? page,
+        pageSize: overrides.pageSize ?? pageSize,
+        search: overrides.search ?? search,
+        dateFrom: overrides.dateFrom ?? dateFrom,
+        dateTo: overrides.dateTo ?? dateTo,
+        status: overrides.status ?? status,
+        specimenType: overrides.specimenType ?? specimenType,
+        qcVerdict: overrides.qcVerdict ?? qcVerdict,
+        freezerUnit: overrides.freezerUnit ?? freezerUnit
       });
 
       const response = await fetch(`${backendUrl}/api/reports/${activeReport}?${queryParams.toString()}`, {
+        signal: controller.signal,
         headers: {
           'Authorization': `Bearer ${token}`,
           ...(activeLab ? { 'x-active-lab-id': activeLab } : {})
@@ -419,34 +453,83 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
         console.error("Failed to load report data:", data.error);
       }
     } catch (error) {
-      console.error("Error fetching report data:", error);
+      if (error.name !== 'AbortError') {
+        console.error("Error fetching report data:", error);
+      }
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchReportData();
-  }, [activeReport, page]);
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [activeReport, page, pageSize]);
 
   const handleApplyFilters = () => {
-    setPage(1);
-    fetchReportData();
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      fetchReportData({ page: 1 });
+    }
   };
 
   const handleResetFilters = () => {
-    setSearch('');
-    setDateFrom('');
-    setDateTo('');
-    setStatus('All');
-    setSpecimenType('All');
-    setQcVerdict('All');
-    setFreezerUnit('All');
-    setPage(1);
-    // Use timeout to let state updates apply before fetching
-    setTimeout(() => {
-      fetchReportData();
-    }, 50);
+    const reset = {
+      search: '',
+      dateFrom: '',
+      dateTo: '',
+      status: 'All',
+      specimenType: 'All',
+      qcVerdict: 'All',
+      freezerUnit: 'All',
+      page: 1
+    };
+    setSearch(reset.search);
+    setDateFrom(reset.dateFrom);
+    setDateTo(reset.dateTo);
+    setStatus(reset.status);
+    setSpecimenType(reset.specimenType);
+    setQcVerdict(reset.qcVerdict);
+    setFreezerUnit(reset.freezerUnit);
+    if (page !== 1) {
+      setPage(1);
+    }
+    fetchReportData(reset);
+  };
+
+  const handleQuickDatePreset = (preset) => {
+    const today = new Date();
+    const todayStr = today.toLocaleDateString('en-CA');
+    let nextFrom = '';
+    let nextTo = '';
+    if (preset === 'today') {
+      nextFrom = todayStr;
+      nextTo = todayStr;
+    } else if (preset === 'yesterday') {
+      const yest = new Date(today);
+      yest.setDate(yest.getDate() - 1);
+      const yestStr = yest.toLocaleDateString('en-CA');
+      nextFrom = yestStr;
+      nextTo = yestStr;
+    } else if (preset === '7days') {
+      const past7 = new Date(today);
+      past7.setDate(past7.getDate() - 7);
+      nextFrom = past7.toLocaleDateString('en-CA');
+      nextTo = todayStr;
+    }
+    setDateFrom(nextFrom);
+    setDateTo(nextTo);
+    if (page !== 1) {
+      setPage(1);
+    }
+    fetchReportData({ dateFrom: nextFrom, dateTo: nextTo, page: 1 });
   };
 
   const toggleGroup = (groupId) => {
@@ -457,6 +540,9 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
   };
 
   const filteredGroups = REPORT_GROUPS.filter(group => {
+    if (reportsCategory === 'workflow') {
+      return ['sample-collection', 'subject-consent', 'specimen-inventory'].includes(group.id);
+    }
     if (reportsCategory === 'operations') {
       return [
         'sample-collection', 'sample-processing', 'specimen-inventory', 
@@ -646,7 +732,7 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '24px', alignItems: 'start' }}>
         
         {/* Left Side: Accordion Menu */}
-        <div className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left', maxHeight: '720px', overflowY: 'auto' }}>
+        <div className="glass-card sticky-report-sidebar" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', textAlign: 'left', maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', position: 'sticky', top: '16px' }}>
           <h3 style={{ fontSize: '13px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-tertiary)', margin: '0 0 10px 8px', letterSpacing: '0.05em' }}>
             {reportsCategory === 'operations' ? 'Operations Modules' : reportsCategory === 'administration' ? 'Administration Modules' : 'Workflow Modules'}
           </h3>
@@ -764,9 +850,17 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
               {!['freezer-occupancy', 'empty-storage', 'biobank-overview', 'key-statistics', 'operational-summary', 'temperature-excursion'].includes(activeReport) && (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
-                      Date From
-                    </label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
+                        Date From
+                      </label>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button type="button" onClick={() => handleQuickDatePreset('today')} style={{ fontSize: '10px', padding: '2px 6px', background: 'rgba(0, 242, 254, 0.1)', color: 'var(--accent-cyan)', border: '1px solid rgba(0, 242, 254, 0.2)', borderRadius: '4px', cursor: 'pointer' }}>Today</button>
+                        <button type="button" onClick={() => handleQuickDatePreset('yesterday')} style={{ fontSize: '10px', padding: '2px 6px', background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}>Yesterday</button>
+                        <button type="button" onClick={() => handleQuickDatePreset('7days')} style={{ fontSize: '10px', padding: '2px 6px', background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}>7D</button>
+                        <button type="button" onClick={() => handleQuickDatePreset('clear')} style={{ fontSize: '10px', padding: '2px 6px', background: 'transparent', color: 'var(--text-tertiary)', border: 'none', cursor: 'pointer' }}>Clear</button>
+                      </div>
+                    </div>
                     <input
                       type="date"
                       className="form-control"
@@ -790,7 +884,7 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
               )}
 
               {/* Specimen Type filter dropdown (Specific reports) */}
-              {['sample-collection', 'collection-summary', 'sample-processing', 'processing-summary', 'specimen-inventory', 'expiry-report', 'storage-report', 'qc-report', 'qc-summary', 'disposal-report', 'trace-specimen'].includes(activeReport) && (
+              {['todays-collection', 'daily-collection-summary', 'sample-collection', 'collection-summary', 'sample-processing', 'processing-summary', 'specimen-inventory', 'expiry-report', 'storage-report', 'qc-report', 'qc-summary', 'disposal-report', 'trace-specimen'].includes(activeReport) && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
                     Specimen Type
@@ -905,6 +999,68 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
 
           </div>
 
+          {/* Daily Collection KPI Quick Statistics */}
+          {(activeReport === 'todays-collection' || activeReport === 'daily-collection-summary') && !loading && rows.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div className="glass-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+                  {activeReport === 'todays-collection' ? "Total Samples (Filtered)" : "Total Samples Collected"}
+                </span>
+                <span style={{ fontSize: '24px', fontWeight: '800', color: 'var(--accent-cyan)' }}>
+                  {activeReport === 'todays-collection' ? totalRecords : rows.reduce((s, r) => s + (parseInt(r.totalSamples, 10) || 0), 0)}
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {activeReport === 'todays-collection' ? "Biospecimen intake records" : `Across ${totalRecords} collection dates`}
+                </span>
+              </div>
+
+              <div className="glass-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+                  Total Accumulated Volume
+                </span>
+                <span style={{ fontSize: '24px', fontWeight: '800', color: 'var(--accent-purple)' }}>
+                  {activeReport === 'todays-collection'
+                    ? rows.reduce((s, r) => s + (parseFloat(r.volume) || 0), 0).toFixed(1) + ' mL'
+                    : rows.reduce((s, r) => s + (parseFloat(r.totalVolume) || 0), 0).toFixed(1) + ' mL'
+                  }
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Biological volume drawn
+                </span>
+              </div>
+
+              <div className="glass-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+                  {activeReport === 'todays-collection' ? "Unique Subjects / Donors" : "Total Unique Donors"}
+                </span>
+                <span style={{ fontSize: '24px', fontWeight: '800', color: 'var(--accent-success)' }}>
+                  {activeReport === 'todays-collection' 
+                    ? new Set(rows.map(r => r.subjectId).filter(Boolean)).size 
+                    : rows.reduce((s, r) => s + (parseInt(r.totalDonors, 10) || 0), 0)
+                  }
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Enrolled study participants
+                </span>
+              </div>
+
+              <div className="glass-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+                  {activeReport === 'todays-collection' ? "Active Collectors" : "Active Collection Staff"}
+                </span>
+                <span style={{ fontSize: '24px', fontWeight: '800', color: '#f59e0b' }}>
+                  {activeReport === 'todays-collection'
+                    ? new Set(rows.map(r => r.collector).filter(Boolean)).size
+                    : rows.reduce((s, r) => s + (parseInt(r.totalCollectors, 10) || 0), 0)
+                  }
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  Lab collection officers
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Main Data Report Grid Card */}
           <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
             
@@ -979,9 +1135,28 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
             {/* Pagination Panel */}
             {totalRecords > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Total Records: <strong>{totalRecords}</strong>
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Total Records: <strong>{totalRecords}</strong>
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Rows:</span>
+                    <select
+                      className="form-control"
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setPage(1);
+                      }}
+                      style={{ padding: '4px 8px', fontSize: '12px', width: 'auto', minWidth: '60px' }}
+                    >
+                      <option value={15}>15</option>
+                      <option value={30}>30</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
 
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <button

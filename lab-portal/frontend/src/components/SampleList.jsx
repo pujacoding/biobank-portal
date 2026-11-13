@@ -39,10 +39,21 @@ export default function SampleList({
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
   const [regenerateReason, setRegenerateReason] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [collectionDateFilter, setCollectionDateFilter] = useState('All'); // 'All', 'Today', 'Custom'
+  const [customDate, setCustomDate] = useState('');
+
+  const todayDateStr = new Date().toLocaleDateString('en-CA');
+  const todaySamples = samples.filter(s => s.collection_date === todayDateStr);
+  const todayVolume = todaySamples.reduce((sum, s) => sum + (parseFloat(s.sample_volume) || 0), 0);
+  const todaySpecimenBreakdown = todaySamples.reduce((acc, s) => {
+    acc[s.specimen_type] = (acc[s.specimen_type] || 0) + 1;
+    return acc;
+  }, {});
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, specimenFilter]);
+  }, [search, statusFilter, specimenFilter, collectionDateFilter, customDate, pageSize]);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -72,7 +83,14 @@ export default function SampleList({
     const matchesStatus = statusFilter === 'All' || sample.status === statusFilter;
     const matchesSpecimen = specimenFilter === 'All' || sample.specimen_type === specimenFilter;
 
-    return matchesSearch && matchesStatus && matchesSpecimen;
+    let matchesDate = true;
+    if (collectionDateFilter === 'Today') {
+      matchesDate = sample.collection_date === todayDateStr;
+    } else if (collectionDateFilter === 'Custom' && customDate) {
+      matchesDate = sample.collection_date === customDate;
+    }
+
+    return matchesSearch && matchesStatus && matchesSpecimen && matchesDate;
   });
 
   const uniqueSpecimenTypes = ['All', ...new Set(samples.map(s => s.specimen_type).filter(Boolean))];
@@ -364,69 +382,188 @@ export default function SampleList({
         ← Back to Dashboard
       </button>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h1 style={{ fontSize: '26px', fontWeight: '700' }}>Biospecimen Registry</h1>
-          <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-            Review sample metadata, patient demographics, and active workflow states for {user.lab_name}.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {selectedSampleIds.length > 0 && (
-            <button 
-              className="btn btn-secondary" 
-              onClick={handlePrintSelected} 
-              style={{ padding: '8px 14px', fontSize: '13px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '14px', height: '14px' }}>
-                <polyline points="6 9 6 2 18 2 18 9"/>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                <rect x="6" y="14" width="12" height="8"/>
-              </svg>
-              Print Selected Labels ({selectedSampleIds.length})
+      <div className="sticky-workflow-header" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h1 style={{ fontSize: '26px', fontWeight: '700' }}>Biospecimen Registry</h1>
+            <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+              Review sample metadata, patient demographics, and active workflow states for {user.lab_name}.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            {selectedSampleIds.length > 0 && (
+              <button 
+                className="btn btn-secondary" 
+                onClick={handlePrintSelected} 
+                style={{ padding: '8px 14px', fontSize: '13px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ width: '14px', height: '14px' }}>
+                  <polyline points="6 9 6 2 18 2 18 9"/>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                  <rect x="6" y="14" width="12" height="8"/>
+                </svg>
+                Print Selected Labels ({selectedSampleIds.length})
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={() => setActiveTab('register')} style={{ padding: '8px 14px', fontSize: '13px' }}>
+              + Register Specimen
             </button>
-          )}
-          <button className="btn btn-primary" onClick={() => setActiveTab('register')} style={{ padding: '8px 14px', fontSize: '13px' }}>
-            + Register Specimen
-          </button>
+          </div>
         </div>
-      </div>
 
-      {/* Filter Toolbar */}
-      <div className="glass-card" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', padding: '16px 20px' }}>
-        <div style={{ flex: 2, minWidth: '220px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Search</label>
-          <input 
-            type="text" 
-            className="form-control"
-            placeholder="Search by Sample ID, Subject ID, Barcode..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        {/* Quick Collection View Tabs & Date Controls */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '6px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '4px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setCollectionDateFilter('All');
+                setCustomDate('');
+              }}
+              style={{
+                padding: '6px 14px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                background: collectionDateFilter === 'All' ? 'var(--accent-purple)' : 'transparent',
+                border: 'none',
+                color: collectionDateFilter === 'All' ? '#fff' : 'var(--text-secondary)',
+                fontWeight: collectionDateFilter === 'All' ? '700' : '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              All Specimens ({samples.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCollectionDateFilter('Today');
+                setCustomDate('');
+              }}
+              style={{
+                padding: '6px 14px',
+                fontSize: '12px',
+                borderRadius: '6px',
+                background: collectionDateFilter === 'Today' ? 'var(--accent-cyan)' : 'transparent',
+                border: 'none',
+                color: collectionDateFilter === 'Today' ? '#000' : 'var(--text-secondary)',
+                fontWeight: collectionDateFilter === 'Today' ? '700' : '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              🩸 Today's Collected ({todaySamples.length})
+            </button>
+          </div>
+
+          {collectionDateFilter === 'Today' && (
+            <span style={{ fontSize: '12px', color: 'var(--accent-cyan)', fontWeight: '600' }}>
+              📅 Showing intake for today: {todayDateStr}
+            </span>
+          )}
         </div>
-        <div style={{ flex: 1, minWidth: '150px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Specimen Type</label>
-          <select 
-            className="form-control"
-            value={specimenFilter}
-            onChange={(e) => setSpecimenFilter(e.target.value)}
-          >
-            {uniqueSpecimenTypes.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ flex: 1, minWidth: '150px' }}>
-          <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Workflow Status</label>
-          <select 
-            className="form-control"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            {statusTypes.map(status => (
-              <option key={status} value={status}>{status === 'All' ? 'All Statuses' : status}</option>
-            ))}
-          </select>
+
+        {/* Today's Intake Quick Summary Banner */}
+        {collectionDateFilter === 'Today' && (
+          <div style={{
+            background: 'rgba(0, 242, 254, 0.05)',
+            border: '1px solid rgba(0, 242, 254, 0.2)',
+            borderRadius: 'var(--border-radius-md)',
+            padding: '14px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '24px' }}>🩸</span>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--accent-cyan)' }}>
+                  Today's Sample Collection Intake &bull; {todayDateStr}
+                </div>
+                <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  <strong>{todaySamples.length} samples</strong> collected today &bull; <strong>{todayVolume.toFixed(1)} mL</strong> accumulated volume &bull; {Object.keys(todaySpecimenBreakdown).length > 0 ? Object.entries(todaySpecimenBreakdown).map(([k, v]) => `${v} ${k}`).join(', ') : 'No specimen recorded yet today'}
+                </div>
+              </div>
+            </div>
+            <button 
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setActiveTab('reports')}
+              style={{ padding: '6px 12px', fontSize: '12px', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)' }}
+            >
+              View Daily Reports &rarr;
+            </button>
+          </div>
+        )}
+
+        {/* Filter Toolbar */}
+        <div className="glass-card" style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', padding: '16px 20px' }}>
+          <div style={{ flex: 2, minWidth: '200px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Search</label>
+            <input 
+              type="text" 
+              className="form-control"
+              placeholder="Search by Sample ID, Subject ID, Barcode..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: '140px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Specimen Type</label>
+            <select 
+              className="form-control"
+              value={specimenFilter}
+              onChange={(e) => setSpecimenFilter(e.target.value)}
+            >
+              {uniqueSpecimenTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: 1, minWidth: '140px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Workflow Status</label>
+            <select 
+              className="form-control"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              {statusTypes.map(status => (
+                <option key={status} value={status}>{status === 'All' ? 'All Statuses' : status}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: 1, minWidth: '150px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Collection Date</label>
+            <select 
+              className="form-control"
+              value={collectionDateFilter}
+              onChange={(e) => {
+                setCollectionDateFilter(e.target.value);
+                if (e.target.value !== 'Custom') setCustomDate('');
+              }}
+            >
+              <option value="All">All Dates</option>
+              <option value="Today">Today ({todayDateStr})</option>
+              <option value="Custom">Pick Specific Date...</option>
+            </select>
+          </div>
+          {collectionDateFilter === 'Custom' && (
+            <div style={{ flex: 1, minWidth: '140px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Custom Date</label>
+              <input 
+                type="date"
+                className="form-control"
+                value={customDate}
+                onChange={(e) => setCustomDate(e.target.value)}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -464,7 +601,6 @@ export default function SampleList({
               </thead>
               <tbody>
                 {(() => {
-                  const pageSize = 10;
                   const totalPages = Math.ceil(filteredSamples.length / pageSize);
                   const paginatedSamples = filteredSamples.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -620,13 +756,28 @@ export default function SampleList({
 
           {/* Pagination Controls */}
           {filteredSamples.length > 0 && (() => {
-            const pageSize = 10;
             const totalPages = Math.ceil(filteredSamples.length / pageSize);
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '10px', marginTop: '10px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Showing {Math.min(filteredSamples.length, (currentPage - 1) * pageSize + 1)} to {Math.min(filteredSamples.length, currentPage * pageSize)} of {filteredSamples.length} entries
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Showing {Math.min(filteredSamples.length, (currentPage - 1) * pageSize + 1)} to {Math.min(filteredSamples.length, currentPage * pageSize)} of {filteredSamples.length} entries
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Rows:</span>
+                    <select
+                      className="form-control"
+                      value={pageSize}
+                      onChange={(e) => setPageSize(Number(e.target.value))}
+                      style={{ padding: '4px 8px', fontSize: '12px', width: 'auto', minWidth: '60px' }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <button
                     type="button"

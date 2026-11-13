@@ -98,22 +98,27 @@ export async function initDb() {
     await pool.query("SELECT setval(pg_get_serial_sequence('specimen_types', 'id'), COALESCE(MAX(id), 1)) FROM specimen_types;");
     console.log("AURA DB: Specimen types sync completed.");
 
-    // Ensure "Specimen Type Master" permissions exist in database
-    await pool.query(`
-      INSERT INTO permissions (permission_name, module_name) VALUES
-      ('View Specimen Types', 'Specimen Type Master'),
-      ('Manage Specimen Types', 'Specimen Type Master')
-      ON CONFLICT (permission_name) DO NOTHING;
-    `);
+    // Ensure Barcode Manager schema migrations and permissions are applied
+    const barcodeMigrationPath = path.join(__dirname, '..', 'migrations', '03_barcode_manager.sql');
+    if (fs.existsSync(barcodeMigrationPath)) {
+      const barcodeMigrationSql = fs.readFileSync(barcodeMigrationPath, 'utf8');
+      await pool.query(barcodeMigrationSql);
+      console.log("AURA DB: Barcode Manager migration & permissions verified.");
+    }
 
-    // Ensure they are mapped to Lab Admin (role_id = 2)
+    // Ensure hot-path performance indexes exist
     await pool.query(`
-      INSERT INTO role_permissions (role_id, permission_id)
-      SELECT 2, permission_id FROM permissions WHERE permission_name IN (
-        'View Specimen Types', 'Manage Specimen Types'
-      ) ON CONFLICT DO NOTHING;
+      CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email));
+      CREATE INDEX IF NOT EXISTS idx_samples_lab_id ON samples (lab_id);
+      CREATE INDEX IF NOT EXISTS idx_samples_collector_id ON samples (collector_id);
+      CREATE INDEX IF NOT EXISTS idx_samples_collection_date ON samples (collection_date);
+      CREATE INDEX IF NOT EXISTS idx_samples_created_at ON samples (created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_samples_status ON samples (status);
+      CREATE INDEX IF NOT EXISTS idx_shipment_samples_sample_id ON shipment_samples (sample_id);
+      CREATE INDEX IF NOT EXISTS idx_shipments_origin_lab_id ON shipments (origin_lab_id);
+      CREATE INDEX IF NOT EXISTS idx_shipments_created_at ON shipments (created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_consent_subject_id ON consent (subject_id);
     `);
-    console.log("AURA DB: Action-based permissions for Specimen Type Master initialized.");
 
   } catch (err) {
     console.error("AURA DB [FATAL] Database initialization failed:", err);
