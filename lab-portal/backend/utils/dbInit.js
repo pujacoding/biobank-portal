@@ -114,6 +114,10 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_samples_collection_date ON samples (collection_date);
       CREATE INDEX IF NOT EXISTS idx_samples_created_at ON samples (created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_samples_status ON samples (status);
+      CREATE INDEX IF NOT EXISTS idx_shipment_samples_sample_id ON shipment_samples (sample_id);
+      CREATE INDEX IF NOT EXISTS idx_shipments_origin_lab_id ON shipments (origin_lab_id);
+      CREATE INDEX IF NOT EXISTS idx_shipments_created_at ON shipments (created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_consent_subject_id ON consent (subject_id);
     `);
 
   } catch (err) {

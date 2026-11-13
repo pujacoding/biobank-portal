@@ -7,3 +7,5 @@ lab-portal/backend/data/*.bak
 test_failure.png
 test_failure_html.txt
 .vercel
+dist/
+

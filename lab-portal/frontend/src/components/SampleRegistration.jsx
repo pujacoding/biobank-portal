@@ -1462,7 +1462,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
 
 
         {/* Section C: Collection Information */}
-        <fieldset ref={sectionRefs.B} style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <fieldset ref={sectionRefs.C} style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-tertiary)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Section C: Collection Information (Auto Fetched)
           </legend>
@@ -1502,6 +1502,8 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
         </div>
         </fieldset>
       </form>
+        </div>
+      </div>
 
       {/* View Full Consent Modal */}
       {showFullConsentModal && selectedTemplate && (
