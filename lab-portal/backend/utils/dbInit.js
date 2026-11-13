@@ -120,6 +120,18 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_consent_subject_id ON consent (subject_id);
     `);
 
+    // Synchronize stored sample coordinates into barcodes table
+    await pool.query(`
+      UPDATE barcodes b
+      SET storage_location = s.location,
+          status = CASE WHEN b.status = 'VOIDED' THEN 'VOIDED' ELSE 'STORED' END
+      FROM samples s
+      WHERE b.sample_id = s.id 
+        AND s.location IS NOT NULL 
+        AND s.status = 'Stored' 
+        AND (b.storage_location IS NULL OR b.storage_location != s.location);
+    `);
+
   } catch (err) {
     console.error("AURA DB [FATAL] Database initialization failed:", err);
     throw err;
