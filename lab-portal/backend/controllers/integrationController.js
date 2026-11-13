@@ -806,6 +806,7 @@ export async function createShipment(req, res, next) {
       destination, 
       destination_lab_id,
       barcodes, 
+      sample_ids,
       origin_lab_id, 
       dispatched_by,
       temperature = 'Per validated SOP',
@@ -813,7 +814,10 @@ export async function createShipment(req, res, next) {
       notes 
     } = req.body;
 
-    if (!destination || !barcodes || barcodes.length === 0) {
+    const itemsToTransfer = (Array.isArray(barcodes) && barcodes.length > 0) ? barcodes : 
+                            (Array.isArray(sample_ids) && sample_ids.length > 0) ? sample_ids : [];
+
+    if (!destination || itemsToTransfer.length === 0) {
       return res.status(400).json({ error: "Missing destination laboratory or sample barcodes." });
     }
 
@@ -827,7 +831,7 @@ export async function createShipment(req, res, next) {
       FROM samples s
       LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status NOT IN ('VOIDED', 'Inactive')
       WHERE s.id = ANY($1::varchar[]) OR b.barcode_value = ANY($1::varchar[])
-    `, [barcodes]);
+    `, [itemsToTransfer]);
 
     if (checkRes.rows.length === 0) {
       await client.query('ROLLBACK');
@@ -900,10 +904,31 @@ export async function createShipment(req, res, next) {
 
     await client.query('COMMIT');
 
+    const createdShipment = {
+      id,
+      transfer_id: id,
+      tracking_number: id,
+      origin_lab_id: effOriginLabId,
+      destination,
+      destination_lab_id: validDestLabId,
+      status: 'In Transit',
+      dispatched_by: effDispatcher,
+      temperature,
+      courier,
+      notes,
+      manifest_items: checkRes.rows.map(r => ({
+        id: r.sample_id,
+        specimen_type: r.specimen_type,
+        sample_volume: r.sample_volume,
+        volume_unit: r.volume_unit
+      }))
+    };
+
     res.status(201).json({ 
       success: true, 
       shipmentId: id, 
       transferId: id,
+      shipment: createdShipment,
       specimenCount: processedSampleIds.size,
       message: `Transfer ${id} dispatched successfully with ${processedSampleIds.size} specimen(s).` 
     });
@@ -920,39 +945,78 @@ export async function createShipment(req, res, next) {
  */
 export async function verifyTransferScan(req, res, next) {
   try {
-    const { shipment_id, barcode } = req.body;
-    if (!shipment_id || !barcode) {
-      return res.status(400).json({ error: "Missing transfer ID or scanned barcode." });
+    const rawBarcode = req.body.barcode || req.body.barcode_id || req.body.sample_id;
+    const shipment_id = req.body.shipment_id;
+
+    if (!rawBarcode) {
+      return res.status(400).json({ error: "Missing scanned barcode or specimen ID." });
     }
 
-    const cleanBarcode = barcode.trim();
+    const cleanBarcode = rawBarcode.trim();
 
-    // Query manifest sample matching barcode or sample_id
-    const result = await query(`
+    let queryText = `
       SELECT ss.*, 
              s.id as sample_id, s.specimen_type, s.sample_volume, s.volume_unit, s.status as sample_status,
              s.collection_date, s.collection_time, s.subject_id,
-             b.barcode_value
+             b.barcode_value,
+             shp.id as transfer_id, shp.status as shipment_status, shp.destination, shp.destination_lab_id,
+             shp.origin_lab_id, shp.dispatched_by, shp.temperature, shp.notes as shipment_notes,
+             orig_lab.name as origin_lab_name, dest_lab.name as destination_lab_name
       FROM shipment_samples ss
+      JOIN shipments shp ON ss.shipment_id = shp.id
       JOIN samples s ON ss.sample_id = s.id
       LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status NOT IN ('VOIDED', 'Inactive')
-      WHERE ss.shipment_id = $1 AND (s.id = $2 OR b.barcode_value = $2)
-      LIMIT 1
-    `, [shipment_id, cleanBarcode]);
+      LEFT JOIN labs orig_lab ON shp.origin_lab_id = orig_lab.id
+      LEFT JOIN labs dest_lab ON shp.destination_lab_id = dest_lab.id
+      WHERE (s.id = $1 OR b.barcode_value = $1)
+    `;
+    const params = [cleanBarcode];
+
+    if (shipment_id) {
+      queryText += ` AND ss.shipment_id = $2`;
+      params.push(shipment_id);
+    } else {
+      queryText += ` AND shp.status = 'In Transit'`;
+    }
+
+    queryText += ` ORDER BY ss.verified_at DESC NULLS FIRST LIMIT 1`;
+
+    const result = await query(queryText, params);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
         matched: false,
-        error: `Mismatched Barcode: '${cleanBarcode}' is not part of Transfer ${shipment_id} manifest.`
+        error: `Mismatched Barcode: '${cleanBarcode}' was not found in any active transfer manifest.`
       });
     }
 
+    const row = result.rows[0];
     res.json({
       success: true,
       matched: true,
-      sample: result.rows[0],
-      message: `Barcode verified against Transfer ${shipment_id} manifest.`
+      sample: {
+        id: row.sample_id,
+        specimen_type: row.specimen_type,
+        sample_volume: row.sample_volume,
+        volume_unit: row.volume_unit,
+        status: row.sample_status,
+        subject_id: row.subject_id,
+        barcode_value: row.barcode_value
+      },
+      shipment: {
+        id: row.shipment_id,
+        transfer_id: row.transfer_id,
+        status: row.shipment_status,
+        origin_lab_id: row.origin_lab_id,
+        origin_lab_name: row.origin_lab_name,
+        destination: row.destination,
+        destination_lab_name: row.destination_lab_name,
+        dispatched_by: row.dispatched_by,
+        temperature: row.temperature,
+        notes: row.shipment_notes
+      },
+      message: `Barcode verified against Transfer ${row.transfer_id} manifest.`
     });
   } catch (error) {
     next(error);

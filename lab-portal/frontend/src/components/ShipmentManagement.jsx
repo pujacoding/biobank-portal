@@ -27,6 +27,15 @@ const playBeep = (type = 'success') => {
   }
 };
 
+const parseJsonResponse = async (res) => {
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return await res.json();
+  }
+  const text = await res.text();
+  throw new Error(`Server returned ${res.status}: ${text.slice(0, 100)}`);
+};
+
 const DEFAULT_DESTINATIONS = [
   { id: 2, name: 'Central Biobank Laboratory B', type: 'Central Biobank', temp: 'Per validated SOP (-80°C / LN2)' },
   { id: 1, name: 'Collection Center A (Field Clinic)', type: 'Collection Center', temp: '2°C to 8°C Cold Pack' },
@@ -59,12 +68,22 @@ export default function ShipmentManagement({
 
   // Transfer creation state (Steps 1, 2, 3)
   const [selectedSampleId, setSelectedSampleId] = useState('');
-  const [destinationLabId, setDestinationLabId] = useState(2);
+  const [destinationLabId, setDestinationLabId] = useState(() => {
+    const other = DEFAULT_DESTINATIONS.find(d => Number(d.id) !== Number(activeLabId));
+    return other ? other.id : 2;
+  });
   const [dispatchedBy, setDispatchedBy] = useState(user?.name || user?.username || 'Lab Technician');
   const [temperatureSop, setTemperatureSop] = useState('Per validated SOP');
   const [courierNotes, setCourierNotes] = useState('');
   const [dispatching, setDispatching] = useState(false);
   const [dispatchAlert, setDispatchAlert] = useState(null);
+
+  useEffect(() => {
+    if (activeLabId && Number(destinationLabId) === Number(activeLabId)) {
+      const other = DEFAULT_DESTINATIONS.find(d => Number(d.id) !== Number(activeLabId));
+      if (other) setDestinationLabId(other.id);
+    }
+  }, [activeLabId, destinationLabId]);
 
   // Shipments & Transfers state
   const [shipments, setShipments] = useState([]);
@@ -89,12 +108,13 @@ export default function ShipmentManagement({
     if (!token) return;
     setLoadingShipments(true);
     try {
-      const res = await fetch(`${backendUrl}/integration/shipments`, {
+      const res = await fetch(`${backendUrl}/api/integration/shipments`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        const data = await res.json();
-        setShipments(data);
+        const data = await parseJsonResponse(res);
+        const list = Array.isArray(data) ? data : (data.shipments || []);
+        setShipments(list);
       }
     } catch (err) {
       console.error('Failed to load transfers:', err);
@@ -140,6 +160,12 @@ export default function ShipmentManagement({
       return;
     }
 
+    if (activeLabId && Number(destinationLabId) === Number(activeLabId)) {
+      setDispatchAlert({ type: 'error', message: 'Step 2: Destination laboratory cannot be the same as your origin facility.' });
+      playBeep('error');
+      return;
+    }
+
     setDispatching(true);
     setDispatchAlert(null);
 
@@ -153,10 +179,11 @@ export default function ShipmentManagement({
         dispatched_by: dispatchedBy || 'Lab Technician',
         temperature: temperatureSop,
         notes: courierNotes,
+        barcodes: [selectedSampleId],
         sample_ids: [selectedSampleId]
       };
 
-      const res = await fetch(`${backendUrl}/integration/shipments`, {
+      const res = await fetch(`${backendUrl}/api/integration/shipments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -165,16 +192,17 @@ export default function ShipmentManagement({
         body: JSON.stringify(payload)
       });
 
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
 
       if (!res.ok) {
         throw new Error(data.error || 'Failed to dispatch transfer');
       }
 
       playBeep('success');
+      const transferId = data.shipment?.transfer_id || data.transferId || data.shipmentId || 'TRF';
       setDispatchAlert({
         type: 'success',
-        message: `Transfer ${data.shipment?.transfer_id || 'TRF'} created & dispatched! Consignment is now In Transit.`
+        message: `Transfer ${transferId} created & dispatched! Consignment is now In Transit.`
       });
 
       // Clear form
@@ -209,22 +237,22 @@ export default function ShipmentManagement({
     setScanResult(null);
 
     try {
-      const res = await fetch(`${backendUrl}/integration/shipments/verify-scan`, {
+      const res = await fetch(`${backendUrl}/api/integration/shipments/verify-scan`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ barcode_id: barcode })
+        body: JSON.stringify({ barcode: barcode, barcode_id: barcode, sample_id: barcode })
       });
 
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
 
       if (!res.ok || !data.matched) {
         playBeep('error');
         setScanAlert({
           type: 'error',
-          message: data.message || `No active transfer manifest found matching barcode "${barcode}".`
+          message: data.error || data.message || `No active transfer manifest found matching barcode "${barcode}".`
         });
         setScanResult(null);
       } else {
@@ -247,7 +275,7 @@ export default function ShipmentManagement({
   const handleAcceptSample = async (sampleId, shipmentId) => {
     setActionLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/integration/shipments/accept-sample`, {
+      const res = await fetch(`${backendUrl}/api/integration/shipments/accept-sample`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -261,7 +289,7 @@ export default function ShipmentManagement({
         })
       });
 
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Failed to accept specimen');
 
       playBeep('success');
@@ -300,7 +328,7 @@ export default function ShipmentManagement({
     if (!quarantineTargetSample) return;
     setActionLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/integration/shipments/quarantine-sample`, {
+      const res = await fetch(`${backendUrl}/api/integration/shipments/quarantine-sample`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -314,7 +342,7 @@ export default function ShipmentManagement({
         })
       });
 
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Failed to quarantine specimen');
 
       playBeep('error');
