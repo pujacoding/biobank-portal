@@ -1126,6 +1126,9 @@ export default function App() {
               onStorageAction={() => fetchSamples(token)} 
               activeLabId={activeLabId}
               activeLabName={activeLabName}
+              preSelectedSampleId={preSelectedSampleId}
+              setPreSelectedSampleId={setPreSelectedSampleId}
+              setActiveTab={setActiveTab}
             />
           )}
 
@@ -1139,6 +1142,7 @@ export default function App() {
               activeLabId={activeLabId}
               activeLabName={activeLabName}
               setActiveTab={setActiveTab}
+              setPreSelectedSampleId={setPreSelectedSampleId}
             />
           )}
 

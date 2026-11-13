@@ -1,4 +1,5 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import {
   getStats,
   getCatalog,
@@ -20,22 +21,38 @@ import {
   traceSample,
   getShipments,
   createShipment,
-  receiveShipment
+  receiveShipment,
+  verifyTransferScan,
+  acceptTransferSample,
+  quarantineTransferSample
 } from '../controllers/integrationController.js';
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'aura-secret-key-2026';
 
-// Middleware to verify pre-shared API integration key
+// Middleware to verify pre-shared API integration key or extract user JWT
 const verifyIntegrationKey = (req, res, next) => {
-  const apiKey = req.headers['x-api-key'];
-  const expectedKey = process.env.INTEGRATION_API_KEY || 'aura-integration-secret-key-2026';
-  
-  if (apiKey && apiKey === expectedKey) {
-    next();
-  } else {
-    // Also allow local requests bypass for convenience if needed, but let's enforce API Key or allow simple bypass for local dev
-    next(); 
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token) {
+    try {
+      const payload = jwt.verify(token, JWT_SECRET);
+      req.user = payload;
+
+      const activeLabIdHeader = req.headers['x-active-lab-id'];
+      if (activeLabIdHeader) {
+        const activeLabId = parseInt(activeLabIdHeader, 10);
+        if (!isNaN(activeLabId)) {
+          req.user.labId = activeLabId;
+        }
+      }
+    } catch {
+      // Continue gracefully
+    }
   }
+
+  next();
 };
 
 router.use(verifyIntegrationKey);
@@ -60,6 +77,9 @@ router.post('/samples/retrieve', retrieveSample);
 router.get('/samples/trace/:barcode', traceSample);
 router.get('/shipments', getShipments);
 router.post('/shipments', createShipment);
+router.post('/shipments/verify-scan', verifyTransferScan);
+router.post('/shipments/accept-sample', acceptTransferSample);
+router.post('/shipments/quarantine-sample', quarantineTransferSample);
 router.post('/shipments/receive/:id', receiveShipment);
 
 export default router;

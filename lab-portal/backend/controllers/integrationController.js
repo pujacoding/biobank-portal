@@ -457,32 +457,66 @@ export async function storeSample(req, res, next) {
 
     await client.query('BEGIN');
 
-    const consentCheck = await client.query("SELECT consent_status FROM samples WHERE id = $1", [barcode]);
-    if (consentCheck.rows.length > 0 && consentCheck.rows[0].consent_status === 'Withdrawn') {
+    // 1. Resolve and validate sample record
+    const sampleCheck = await client.query(`
+      SELECT s.id, s.consent_status, s.status as sample_status, s.location
+      FROM samples s
+      LEFT JOIN barcodes b ON s.id = b.sample_id
+      WHERE s.id = $1 OR b.barcode_value = $1
+      LIMIT 1
+    `, [barcode]);
+
+    if (sampleCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: `Specimen not found for identifier: ${barcode}` });
+    }
+
+    const currentSample = sampleCheck.rows[0];
+
+    // Check consent compliance
+    if (currentSample.consent_status === 'Withdrawn') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: "Operation Blocked: Sample has withdrawn consent." });
     }
+
+    // Check workflow eligibility: sample cannot be Quarantined or In Transit
+    if (currentSample.sample_status === 'Quarantined') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        error: "Storage Blocked: Specimen is currently Quarantined. It cannot be allocated to storage until QC investigation is resolved." 
+      });
+    }
+
+    if (currentSample.sample_status === 'In Transit' || currentSample.sample_status === 'Shipped') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        error: "Storage Blocked: Specimen is currently In Transit. The receiving laboratory must scan, verify and accept the physical specimen before storage allocation." 
+      });
+    }
+
+    const targetSampleId = currentSample.id;
 
     await client.query(`
       UPDATE samples 
       SET location = $1, quality = $2, diagnosis = $3, status = 'Stored', retrieval_status = 'Stored', ingestion_status = 'Ingested' 
       WHERE id = $4
-    `, [location, quality, diagnosis || 'Healthy Control', barcode]);
+    `, [location, quality, diagnosis || 'Healthy Control', targetSampleId]);
 
     await client.query(`
       UPDATE barcodes 
       SET storage_location = $1, status = 'STORED' 
       WHERE (sample_id = $2 OR barcode_value = $2) AND status NOT IN ('VOIDED', 'Inactive')
-    `, [location, barcode]);
+    `, [location, targetSampleId]);
 
+    const userId = req.user?.userId || 1;
     await client.query(`
       INSERT INTO barcode_audit (sample_id, action_type, reason, performed_by)
-      VALUES ($1, 'Storage Assignment', 'Deposited specimen at coordinate: ' || $2, 1)
-    `, [barcode, location]);
+      VALUES ($1, 'Storage Assignment', 'Deposited specimen at coordinate: ' || $2, $3)
+    `, [targetSampleId, location, userId]);
 
     await client.query('COMMIT');
 
-    res.json({ success: true, message: `Specimen ${barcode} successfully stored at ${location}.` });
+    res.json({ success: true, message: `Specimen ${targetSampleId} successfully allocated and stored at ${location}.` });
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);
@@ -683,32 +717,77 @@ export async function traceSample(req, res, next) {
 }
 
 /**
- * Fetch all shipments
+ * Helper to generate sequential transfer IDs: TRF-YYYY-XXX (e.g. TRF-2026-001)
+ */
+async function generateTransferId(client) {
+  const year = new Date().getFullYear();
+  const prefix = `TRF-${year}-`;
+  const res = await client.query(`
+    SELECT id FROM shipments 
+    WHERE id LIKE $1
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+  `, [`${prefix}%`]);
+  
+  let nextSeq = 1;
+  if (res.rows.length > 0) {
+    const lastId = res.rows[0].id;
+    const parts = lastId.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) {
+      nextSeq = lastNum + 1;
+    }
+  }
+  return `${prefix}${String(nextSeq).padStart(3, '0')}`;
+}
+
+/**
+ * Fetch all shipments & transfer manifests with full tracking details
  */
 export async function getShipments(req, res, next) {
   try {
     const sql = `
-      SELECT sh.*, l.name as origin_lab_name,
+      SELECT sh.*, 
+             l.name as origin_lab_name,
+             dl.name as destination_lab_name,
              (SELECT COUNT(*) FROM shipment_samples ss WHERE ss.shipment_id = sh.id) as sample_count
       FROM shipments sh
       LEFT JOIN labs l ON sh.origin_lab_id = l.id
+      LEFT JOIN labs dl ON sh.destination_lab_id = dl.id
       ORDER BY sh.created_at DESC
     `;
     const result = await query(sql);
     const shipments = result.rows;
 
-    const samplesRes = await query("SELECT shipment_id, sample_id FROM shipment_samples");
+    // Fetch individual manifest samples
+    const samplesRes = await query(`
+      SELECT ss.shipment_id, ss.sample_id, 
+             COALESCE(ss.received_status, 'Pending') as received_status, 
+             COALESCE(ss.condition, 'Intact') as condition, 
+             ss.verified_at, ss.notes as sample_notes,
+             s.specimen_type, s.sample_volume, s.volume_unit, s.location, s.status as current_sample_status,
+             s.lab_id as current_lab_id,
+             b.barcode_value
+      FROM shipment_samples ss
+      JOIN samples s ON ss.sample_id = s.id
+      LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status NOT IN ('VOIDED', 'Inactive')
+    `);
+
     const samplesMap = {};
+    const manifestItemsMap = {};
     samplesRes.rows.forEach(row => {
       if (!samplesMap[row.shipment_id]) {
         samplesMap[row.shipment_id] = [];
+        manifestItemsMap[row.shipment_id] = [];
       }
-      samplesMap[row.shipment_id].push(row.sample_id);
+      samplesMap[row.shipment_id].push(row.barcode_value || row.sample_id);
+      manifestItemsMap[row.shipment_id].push(row);
     });
 
     const enrichedShipments = shipments.map(shp => ({
       ...shp,
-      barcodes: (samplesMap[shp.id] || []).join(', ')
+      barcodes: (samplesMap[shp.id] || []).join(', '),
+      manifest_items: manifestItemsMap[shp.id] || []
     }));
 
     res.json({ success: true, shipments: enrichedShipments });
@@ -718,21 +797,32 @@ export async function getShipments(req, res, next) {
 }
 
 /**
- * Dispatch a new shipment (Transactional)
+ * Dispatch a new transfer / shipment (Step 1-3)
  */
 export async function createShipment(req, res, next) {
   const client = await getClient();
   try {
-    const { destination, barcodes, origin_lab_id, notes } = req.body;
+    const { 
+      destination, 
+      destination_lab_id,
+      barcodes, 
+      origin_lab_id, 
+      dispatched_by,
+      temperature = 'Per validated SOP',
+      courier = 'Medical Courier',
+      notes 
+    } = req.body;
+
     if (!destination || !barcodes || barcodes.length === 0) {
-      return res.status(400).json({ error: "Missing destination or sample barcodes" });
+      return res.status(400).json({ error: "Missing destination laboratory or sample barcodes." });
     }
 
     await client.query('BEGIN');
 
-    // Resolve samples and active barcodes matching either sample ID or barcode_value
+    // 1. Resolve and validate specimen records
     const checkRes = await client.query(`
-      SELECT s.id as sample_id, s.consent_status, s.status as sample_status,
+      SELECT s.id as sample_id, s.consent_status, s.status as sample_status, s.lab_id as current_lab_id,
+             s.specimen_type, s.sample_volume, s.volume_unit,
              b.barcode_id, b.barcode_value
       FROM samples s
       LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status NOT IN ('VOIDED', 'Inactive')
@@ -744,19 +834,44 @@ export async function createShipment(req, res, next) {
       return res.status(400).json({ error: "No matching specimen records found for provided identifiers." });
     }
 
-    // Check if any of the specimens has withdrawn consent
+    // Check eligibility: consent must not be Withdrawn, sample not already in transit/shipped or disposed
     for (const row of checkRes.rows) {
       if (row.consent_status === 'Withdrawn') {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: `Shipment Blocked: Specimen '${row.sample_id}' has withdrawn consent.` });
+        return res.status(400).json({ error: `Transfer Blocked: Specimen '${row.sample_id}' has withdrawn consent.` });
+      }
+      if (row.sample_status === 'In Transit' || row.sample_status === 'Shipped') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Transfer Blocked: Specimen '${row.sample_id}' is already In Transit.` });
+      }
+      if (row.sample_status === 'Disposed' || row.sample_status === 'Exhausted') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `Transfer Blocked: Specimen '${row.sample_id}' has been disposed or exhausted.` });
       }
     }
 
-    const id = 'SHP-' + Date.now();
+    // Determine Origin Lab
+    const effOriginLabId = origin_lab_id || req.user?.labId || checkRes.rows[0].current_lab_id || 1;
+
+    // Validate Destination vs Origin
+    if (destination_lab_id && parseInt(destination_lab_id, 10) === parseInt(effOriginLabId, 10)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "Destination laboratory cannot be the same as origin facility." });
+    }
+
+    // Generate Standard Transfer ID (TRF-YYYY-XXX)
+    const id = await generateTransferId(client);
+    const effDispatcher = dispatched_by || req.user?.name || 'Lab Technician';
+
+    const validDestLabId = destination_lab_id && !isNaN(parseInt(destination_lab_id, 10)) ? parseInt(destination_lab_id, 10) : null;
+
     await client.query(`
-      INSERT INTO shipments (id, origin_lab_id, destination, status, shipped_at)
-      VALUES ($1, $2, $3, 'In Transit', CURRENT_TIMESTAMP)
-    `, [id, origin_lab_id || 1, destination]);
+      INSERT INTO shipments (
+        id, origin_lab_id, destination, destination_lab_id, status, 
+        dispatched_by, temperature, courier, notes, shipped_at, created_at
+      )
+      VALUES ($1, $2, $3, $4, 'In Transit', $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [id, effOriginLabId, destination, validDestLabId, effDispatcher, temperature, courier, notes || null]);
 
     const processedSampleIds = new Set();
     const userId = req.user?.userId || 1;
@@ -765,11 +880,13 @@ export async function createShipment(req, res, next) {
       if (processedSampleIds.has(row.sample_id)) continue;
       processedSampleIds.add(row.sample_id);
 
-      await client.query(
-        "INSERT INTO shipment_samples (shipment_id, sample_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-        [id, row.sample_id]
-      );
-      await client.query("UPDATE samples SET status = 'Shipped' WHERE id = $1", [row.sample_id]);
+      await client.query(`
+        INSERT INTO shipment_samples (shipment_id, sample_id, received_status, condition)
+        VALUES ($1, $2, 'Pending', 'Intact')
+        ON CONFLICT (shipment_id, sample_id) DO NOTHING
+      `, [id, row.sample_id]);
+
+      await client.query("UPDATE samples SET status = 'In Transit' WHERE id = $1", [row.sample_id]);
 
       if (row.barcode_id) {
         await client.query("UPDATE barcodes SET status = 'IN_TRANSIT' WHERE barcode_id = $1", [row.barcode_id]);
@@ -777,13 +894,19 @@ export async function createShipment(req, res, next) {
 
       await client.query(`
         INSERT INTO barcode_audit (sample_id, barcode_id, barcode_value, action_type, reason, performed_by)
-        VALUES ($1, $2, $3, 'Shipment Dispatch', $4, $5)
-      `, [row.sample_id, row.barcode_id || null, row.barcode_value || null, `Dispatched in cargo batch ${id} to ${destination}${notes ? ` (${notes})` : ''}`, userId]);
+        VALUES ($1, $2, $3, 'Transfer Dispatch', $4, $5)
+      `, [row.sample_id, row.barcode_id || null, row.barcode_value || null, `Dispatched in transfer ${id} to ${destination} via ${courier} (${temperature})`, userId]);
     }
 
     await client.query('COMMIT');
 
-    res.status(201).json({ success: true, shipmentId: id, specimenCount: processedSampleIds.size });
+    res.status(201).json({ 
+      success: true, 
+      shipmentId: id, 
+      transferId: id,
+      specimenCount: processedSampleIds.size,
+      message: `Transfer ${id} dispatched successfully with ${processedSampleIds.size} specimen(s).` 
+    });
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);
@@ -793,23 +916,246 @@ export async function createShipment(req, res, next) {
 }
 
 /**
- * Receive active shipment at destination (Transactional)
+ * Step 5: Verify barcode against transfer manifest upon arrival
+ */
+export async function verifyTransferScan(req, res, next) {
+  try {
+    const { shipment_id, barcode } = req.body;
+    if (!shipment_id || !barcode) {
+      return res.status(400).json({ error: "Missing transfer ID or scanned barcode." });
+    }
+
+    const cleanBarcode = barcode.trim();
+
+    // Query manifest sample matching barcode or sample_id
+    const result = await query(`
+      SELECT ss.*, 
+             s.id as sample_id, s.specimen_type, s.sample_volume, s.volume_unit, s.status as sample_status,
+             s.collection_date, s.collection_time, s.subject_id,
+             b.barcode_value
+      FROM shipment_samples ss
+      JOIN samples s ON ss.sample_id = s.id
+      LEFT JOIN barcodes b ON s.id = b.sample_id AND b.status NOT IN ('VOIDED', 'Inactive')
+      WHERE ss.shipment_id = $1 AND (s.id = $2 OR b.barcode_value = $2)
+      LIMIT 1
+    `, [shipment_id, cleanBarcode]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        matched: false,
+        error: `Mismatched Barcode: '${cleanBarcode}' is not part of Transfer ${shipment_id} manifest.`
+      });
+    }
+
+    res.json({
+      success: true,
+      matched: true,
+      sample: result.rows[0],
+      message: `Barcode verified against Transfer ${shipment_id} manifest.`
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Step 6: Accept specimen into receiving laboratory custody
+ */
+export async function acceptTransferSample(req, res, next) {
+  const client = await getClient();
+  try {
+    const { shipment_id, sample_id, condition = 'Intact', notes } = req.body;
+    if (!shipment_id || !sample_id) {
+      return res.status(400).json({ error: "Missing shipment ID or sample ID." });
+    }
+
+    await client.query('BEGIN');
+
+    // Get shipment info
+    const shpRes = await client.query("SELECT * FROM shipments WHERE id = $1", [shipment_id]);
+    if (shpRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: `Transfer ${shipment_id} not found.` });
+    }
+    const shipment = shpRes.rows[0];
+
+    // Update manifest item
+    await client.query(`
+      UPDATE shipment_samples 
+      SET received_status = 'Accepted', condition = $1, verified_at = CURRENT_TIMESTAMP, notes = $2
+      WHERE shipment_id = $3 AND sample_id = $4
+    `, [condition, notes || null, shipment_id, sample_id]);
+
+    // Update sample record: transferred to receiving lab custody, cleared old location, ready for storage
+    const newLabId = shipment.destination_lab_id || shipment.origin_lab_id;
+    await client.query(`
+      UPDATE samples 
+      SET status = 'Received', qc_status = 'Verified', location = NULL, lab_id = COALESCE($1, lab_id)
+      WHERE id = $2
+    `, [newLabId, sample_id]);
+
+    // Update barcode
+    await client.query(`
+      UPDATE barcodes 
+      SET status = 'VERIFIED', storage_location = NULL 
+      WHERE sample_id = $1 AND status NOT IN ('VOIDED', 'Inactive')
+    `, [sample_id]);
+
+    const userId = req.user?.userId || 1;
+    await client.query(`
+      INSERT INTO barcode_audit (sample_id, action_type, reason, performed_by)
+      VALUES ($1, 'Transfer Acceptance', $2, $3)
+    `, [sample_id, `Specimen verified and accepted into custody at ${shipment.destination}. Condition: ${condition}`, userId]);
+
+    // Check if all samples in shipment are now resolved
+    const pendingCheck = await client.query(`
+      SELECT COUNT(*) as pending_count 
+      FROM shipment_samples 
+      WHERE shipment_id = $1 AND (received_status IS NULL OR received_status = 'Pending')
+    `, [shipment_id]);
+
+    const isFullyReceived = parseInt(pendingCheck.rows[0].pending_count, 10) === 0;
+    if (isFullyReceived) {
+      const userName = req.user?.name || 'Lab Technician';
+      await client.query(`
+        UPDATE shipments 
+        SET status = 'Received', received_at = CURRENT_TIMESTAMP, received_by = $1 
+        WHERE id = $2
+      `, [userName, shipment_id]);
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `Specimen ${sample_id} accepted into receiving biobank custody and ready for storage allocation.`,
+      isFullyReceived
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    next(error);
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Step 6: Quarantine specimen upon condition defect / temperature excursion
+ */
+export async function quarantineTransferSample(req, res, next) {
+  const client = await getClient();
+  try {
+    const { shipment_id, sample_id, reason = 'Damaged Container', notes } = req.body;
+    if (!shipment_id || !sample_id) {
+      return res.status(400).json({ error: "Missing shipment ID or sample ID." });
+    }
+
+    await client.query('BEGIN');
+
+    const shpRes = await client.query("SELECT * FROM shipments WHERE id = $1", [shipment_id]);
+    if (shpRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: `Transfer ${shipment_id} not found.` });
+    }
+    const shipment = shpRes.rows[0];
+
+    // Mark sample as Quarantined in manifest
+    await client.query(`
+      UPDATE shipment_samples 
+      SET received_status = 'Quarantined', condition = $1, verified_at = CURRENT_TIMESTAMP, notes = $2
+      WHERE shipment_id = $3 AND sample_id = $4
+    `, [reason, notes || null, shipment_id, sample_id]);
+
+    // Update sample record
+    await client.query(`
+      UPDATE samples 
+      SET status = 'Quarantined', qc_status = 'Quarantined', quality = $1 
+      WHERE id = $2
+    `, [reason, sample_id]);
+
+    // Update barcode
+    await client.query(`
+      UPDATE barcodes 
+      SET status = 'QUARANTINED' 
+      WHERE sample_id = $1 AND status NOT IN ('VOIDED', 'Inactive')
+    `, [sample_id]);
+
+    // Update shipment status to Quarantined
+    await client.query(`
+      UPDATE shipments 
+      SET status = 'Quarantined', quarantine_reason = $1, condition_status = $1 
+      WHERE id = $2
+    `, [reason, shipment_id]);
+
+    const userId = req.user?.userId || 1;
+    await client.query(`
+      INSERT INTO barcode_audit (sample_id, action_type, reason, performed_by)
+      VALUES ($1, 'Sample Quarantined', $2, $3)
+    `, [sample_id, `Quarantined at destination during transfer ${shipment_id}. Non-conformance: ${reason}${notes ? ` - ${notes}` : ''}`, userId]);
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `Specimen ${sample_id} flagged as Quarantined. Storage allocation blocked pending investigation.`
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    next(error);
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Receive active shipment at destination (Transactional batch fallback)
  */
 export async function receiveShipment(req, res, next) {
   const client = await getClient();
   try {
     const { id } = req.params;
+    const { condition = 'Intact' } = req.body || {};
     
     await client.query('BEGIN');
 
-    await client.query("UPDATE shipments SET status = 'Received', received_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+    const shpRes = await client.query("SELECT * FROM shipments WHERE id = $1", [id]);
+    if (shpRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: `Shipment ${id} not found.` });
+    }
+    const shipment = shpRes.rows[0];
+
+    const userName = req.user?.name || 'Lab Technician';
+    await client.query(`
+      UPDATE shipments 
+      SET status = 'Received', received_at = CURRENT_TIMESTAMP, received_by = $1, condition_status = $2 
+      WHERE id = $3
+    `, [userName, condition, id]);
 
     const samplesRes = await client.query("SELECT sample_id FROM shipment_samples WHERE shipment_id = $1", [id]);
     const userId = req.user?.userId || 1;
+    const newLabId = shipment.destination_lab_id || shipment.origin_lab_id;
     
     for (const row of samplesRes.rows) {
-      await client.query("UPDATE samples SET status = 'Received' WHERE id = $1", [row.sample_id]);
-      await client.query("UPDATE barcodes SET status = 'VERIFIED' WHERE sample_id = $1 AND status = 'IN_TRANSIT'", [row.sample_id]);
+      await client.query(`
+        UPDATE shipment_samples 
+        SET received_status = 'Accepted', condition = $1, verified_at = CURRENT_TIMESTAMP
+        WHERE shipment_id = $2 AND sample_id = $3
+      `, [condition, id, row.sample_id]);
+
+      await client.query(`
+        UPDATE samples 
+        SET status = 'Received', qc_status = 'Verified', location = NULL, lab_id = COALESCE($1, lab_id) 
+        WHERE id = $2
+      `, [newLabId, row.sample_id]);
+
+      await client.query(`
+        UPDATE barcodes 
+        SET status = 'VERIFIED', storage_location = NULL 
+        WHERE sample_id = $1 AND status NOT IN ('VOIDED', 'Inactive')
+      `, [row.sample_id]);
+
       await client.query(`
         INSERT INTO barcode_audit (sample_id, action_type, reason, performed_by)
         VALUES ($1, 'Shipment Receiving', 'Received from shipment: ' || $2, $3)
@@ -818,7 +1164,7 @@ export async function receiveShipment(req, res, next) {
 
     await client.query('COMMIT');
 
-    res.json({ success: true, message: `Shipment ${id} successfully marked as Received.` });
+    res.json({ success: true, message: `Transfer cargo ${id} confirmed received at biobank. Specimens accepted for storage.` });
   } catch (error) {
     await client.query('ROLLBACK');
     next(error);

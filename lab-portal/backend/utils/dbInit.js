@@ -118,6 +118,22 @@ export async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_shipments_origin_lab_id ON shipments (origin_lab_id);
       CREATE INDEX IF NOT EXISTS idx_shipments_created_at ON shipments (created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_consent_subject_id ON consent (subject_id);
+
+      ALTER TABLE shipments 
+      ADD COLUMN IF NOT EXISTS dispatched_by VARCHAR(255) DEFAULT 'Lab Technician',
+      ADD COLUMN IF NOT EXISTS temperature VARCHAR(255) DEFAULT 'Per validated SOP',
+      ADD COLUMN IF NOT EXISTS courier VARCHAR(255) DEFAULT 'Medical Courier',
+      ADD COLUMN IF NOT EXISTS notes TEXT,
+      ADD COLUMN IF NOT EXISTS destination_lab_id INTEGER,
+      ADD COLUMN IF NOT EXISTS received_by VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS condition_status VARCHAR(100) DEFAULT 'Intact',
+      ADD COLUMN IF NOT EXISTS quarantine_reason TEXT;
+
+      ALTER TABLE shipment_samples
+      ADD COLUMN IF NOT EXISTS received_status VARCHAR(50) DEFAULT 'Pending',
+      ADD COLUMN IF NOT EXISTS condition VARCHAR(100) DEFAULT 'Intact',
+      ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS notes TEXT;
     `);
 
     // Synchronize stored sample coordinates into barcodes table
