@@ -208,7 +208,15 @@ export async function getRegistry(req, res, next) {
         COALESCE(b.volume, s.sample_volume) as volume,
         COALESCE(b.volume_unit, s.volume_unit, 'mL') as volume_unit,
         COALESCE(b.storage_location, s.location) as current_storage_location,
-        b.status as barcode_status,
+        COALESCE(b.storage_location, s.location) as storage_location,
+        CASE 
+          WHEN b.status = 'VOIDED' THEN 'VOIDED'
+          WHEN b.status = 'REPLACED' THEN 'REPLACED'
+          WHEN b.status = 'DISPOSED' THEN 'DISPOSED'
+          WHEN b.status = 'IN_TRANSIT' THEN 'IN_TRANSIT'
+          WHEN COALESCE(b.storage_location, s.location) IS NOT NULL AND (s.status = 'Stored' OR s.location IS NOT NULL) THEN 'STORED'
+          ELSE b.status 
+        END as barcode_status,
         b.print_count,
         b.generated_at,
         b.generated_by,
@@ -254,11 +262,12 @@ export async function getRegistry(req, res, next) {
       SELECT
         COUNT(*) as total_barcodes,
         COUNT(CASE WHEN b.generated_at >= CURRENT_DATE THEN 1 END) as generated_today,
-        COUNT(CASE WHEN b.print_count = 0 OR b.status = 'GENERATED' THEN 1 END) as pending_print,
-        COUNT(CASE WHEN UPPER(b.status) = 'STORED' THEN 1 END) as stored_samples,
-        COUNT(CASE WHEN UPPER(b.status) = 'IN_TRANSIT' THEN 1 END) as in_transit,
-        COUNT(CASE WHEN UPPER(b.status) IN ('VOIDED', 'REPLACED', 'INACTIVE') THEN 1 END) as voided_replaced
+        (SELECT COUNT(*) FROM print_queue pq WHERE pq.status = 'PENDING') as pending_print,
+        COUNT(CASE WHEN UPPER(COALESCE(b.status, '')) = 'STORED' OR b.storage_location IS NOT NULL OR s.location IS NOT NULL THEN 1 END) as stored_samples,
+        COUNT(CASE WHEN UPPER(COALESCE(b.status, '')) = 'IN_TRANSIT' THEN 1 END) as in_transit,
+        COUNT(CASE WHEN UPPER(COALESCE(b.status, '')) IN ('VOIDED', 'REPLACED', 'INACTIVE') THEN 1 END) as voided_replaced
       FROM barcodes b
+      LEFT JOIN samples s ON b.sample_id = s.id
       ${labFilterSql}
     `;
     const metricsRes = await query(metricsSql, labFilterParams);
@@ -550,6 +559,13 @@ export async function generateBarcode(req, res, next) {
 
     const parentBarcode = insertResult.rows[0];
 
+    // Automatically queue generated label for printing
+    await client.query(`
+      INSERT INTO print_queue (barcode_id, sample_id, copies, status, queued_by, notes, queued_at)
+      VALUES ($1, $2, 1, 'PENDING', $3, 'Auto-queued upon label generation', CURRENT_TIMESTAMP)
+      ON CONFLICT DO NOTHING
+    `, [parentBarcode.barcode_id, sample_id, req.user.userId]);
+
     // Update Sample record
     await client.query(`
       UPDATE samples 
@@ -646,6 +662,14 @@ export async function generateBarcode(req, res, next) {
         ]);
 
         const aliqBarcode = aliqBarcodeRes.rows[0];
+
+        // Automatically queue aliquot label for printing
+        await client.query(`
+          INSERT INTO print_queue (barcode_id, sample_id, copies, status, queued_by, notes, queued_at)
+          VALUES ($1, $2, 1, 'PENDING', $3, 'Aliquot label auto-queued on generation', CURRENT_TIMESTAMP)
+          ON CONFLICT DO NOTHING
+        `, [aliqBarcode.barcode_id, aliquotSampleId, req.user.userId]);
+
         generatedAliquots.push({
           ...aliqBarcode,
           sample_id: aliquotSampleId,
@@ -810,6 +834,14 @@ export async function generateAliquots(req, res, next) {
       ]);
 
       const aliqBarcode = bRes.rows[0];
+
+      // Automatically queue aliquot label for printing
+      await client.query(`
+        INSERT INTO print_queue (barcode_id, sample_id, copies, status, queued_by, notes, queued_at)
+        VALUES ($1, $2, 1, 'PENDING', $3, 'Aliquot label auto-queued on generation', CURRENT_TIMESTAMP)
+        ON CONFLICT DO NOTHING
+      `, [aliqBarcode.barcode_id, aliqSampleId, req.user.userId]);
+
       createdAliquots.push({
         ...aliqBarcode,
         sample_id: aliqSampleId,
@@ -868,6 +900,7 @@ export async function getBarcodeDetails(req, res, next) {
     const bCheck = await query(`
       SELECT 
         b.*,
+        COALESCE(b.storage_location, s.location) as storage_location,
         u.name as generated_by_name,
         v_u.name as voided_by_name,
         ver_u.name as verified_by_name,
@@ -884,6 +917,14 @@ export async function getBarcodeDetails(req, res, next) {
         s.parent_sample_id,
         s.location as sample_location,
         s.status as sample_status,
+        CASE 
+          WHEN b.status = 'VOIDED' THEN 'VOIDED'
+          WHEN b.status = 'REPLACED' THEN 'REPLACED'
+          WHEN b.status = 'DISPOSED' THEN 'DISPOSED'
+          WHEN b.status = 'IN_TRANSIT' THEN 'IN_TRANSIT'
+          WHEN COALESCE(b.storage_location, s.location) IS NOT NULL AND (s.status = 'Stored' OR s.location IS NOT NULL) THEN 'STORED'
+          ELSE b.status 
+        END as status,
         l.name as lab_name,
         l.location_address as lab_address,
         ct.consent_name,
@@ -908,8 +949,16 @@ export async function getBarcodeDetails(req, res, next) {
 
     // Fetch Aliquot Children if this is a parent barcode
     const aliquotsRes = await query(`
-      SELECT b.barcode_id, b.barcode_value, b.sample_id, b.aliquot_index, b.volume, b.volume_unit, b.status, b.storage_location, b.generated_at
+      SELECT b.barcode_id, b.barcode_value, b.sample_id, b.aliquot_index, b.volume, b.volume_unit,
+             COALESCE(b.storage_location, s.location) as storage_location,
+             CASE 
+               WHEN b.status = 'VOIDED' THEN 'VOIDED'
+               WHEN COALESCE(b.storage_location, s.location) IS NOT NULL AND (s.status = 'Stored' OR s.location IS NOT NULL) THEN 'STORED'
+               ELSE b.status 
+             END as status,
+             b.generated_at
       FROM barcodes b
+      JOIN samples s ON b.sample_id = s.id
       WHERE b.parent_barcode_id = $1 OR b.parent_barcode_value = $2
       ORDER BY b.aliquot_index ASC
     `, [barcode.barcode_id, barcode.barcode_value]);
@@ -1155,6 +1204,8 @@ export async function scanAndVerify(req, res, next) {
         COALESCE(s.volume_unit, b.volume_unit, 'mL') as volume_unit,
         s.container_type,
         COALESCE(b.storage_location, s.location) as storage_location,
+        s.location as sample_location,
+        s.status as sample_status,
         s.consent_status,
         s.parent_sample_id,
         l.name as lab_name,
@@ -1446,6 +1497,14 @@ export async function replaceBarcode(req, res, next) {
     ]);
 
     const newBarcode = insertNewRes.rows[0];
+
+    // Automatically queue replacement label into print_queue and clean old voided queue item
+    await client.query("DELETE FROM print_queue WHERE barcode_id = $1", [oldBarcode.barcode_id]);
+    await client.query(`
+      INSERT INTO print_queue (barcode_id, sample_id, copies, status, queued_by, notes, queued_at)
+      VALUES ($1, $2, 1, 'PENDING', $3, 'Replacement label auto-queued on generation', CURRENT_TIMESTAMP)
+      ON CONFLICT DO NOTHING
+    `, [newBarcode.barcode_id, oldBarcode.sample_id, req.user.userId]);
 
     // 2. Void old barcode and point replaced_by to new barcode
     await client.query(`
@@ -1774,6 +1833,20 @@ export async function addToShipment(req, res, next) {
 export async function getPrintQueue(req, res, next) {
   try {
     const { status = 'ALL' } = req.query;
+
+    // Auto-sync unprinted generated barcodes into print_queue if not already queued as PENDING
+    await query(`
+      INSERT INTO print_queue (barcode_id, sample_id, copies, status, queued_by, notes, queued_at)
+      SELECT b.barcode_id, b.sample_id, 1, 'PENDING', b.generated_by, 'Generated barcode awaiting print', b.generated_at
+      FROM barcodes b
+      WHERE (b.print_count = 0 OR b.status = 'GENERATED')
+        AND b.status NOT IN ('VOIDED', 'Inactive')
+        AND NOT EXISTS (
+          SELECT 1 FROM print_queue pq WHERE pq.barcode_id = b.barcode_id AND pq.status = 'PENDING'
+        )
+      ON CONFLICT DO NOTHING
+    `);
+
     let sql = `
       SELECT 
         pq.*,

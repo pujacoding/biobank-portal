@@ -470,6 +470,12 @@ export async function storeSample(req, res, next) {
     `, [location, quality, diagnosis || 'Healthy Control', barcode]);
 
     await client.query(`
+      UPDATE barcodes 
+      SET storage_location = $1, status = 'STORED' 
+      WHERE (sample_id = $2 OR barcode_value = $2) AND status NOT IN ('VOIDED', 'Inactive')
+    `, [location, barcode]);
+
+    await client.query(`
       INSERT INTO barcode_audit (sample_id, action_type, reason, performed_by)
       VALUES ($1, 'Storage Assignment', 'Deposited specimen at coordinate: ' || $2, 1)
     `, [barcode, location]);
@@ -549,6 +555,11 @@ export async function relocateSample(req, res, next) {
     const oldLocation = currentCheck.rows[0]?.location || 'Unassigned';
 
     await client.query("UPDATE samples SET location = $1 WHERE id = $2", [newLocation, barcode]);
+    await client.query(`
+      UPDATE barcodes 
+      SET storage_location = $1 
+      WHERE (sample_id = $2 OR barcode_value = $2) AND status NOT IN ('VOIDED', 'Inactive')
+    `, [newLocation, barcode]);
 
     await client.query(`
       INSERT INTO barcode_audit (sample_id, action_type, reason, performed_by)
@@ -589,6 +600,12 @@ export async function retrieveSample(req, res, next) {
       UPDATE samples 
       SET location = null, status = 'Retrieved', retrieval_status = 'Retrieved' 
       WHERE id = $1
+    `, [barcode]);
+
+    await client.query(`
+      UPDATE barcodes 
+      SET storage_location = null, status = 'RETRIEVED' 
+      WHERE (sample_id = $1 OR barcode_value = $1) AND status NOT IN ('VOIDED', 'Inactive')
     `, [barcode]);
 
     await client.query(`

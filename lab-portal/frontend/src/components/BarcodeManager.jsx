@@ -397,6 +397,8 @@ export default function BarcodeManager({
     }
 
     try {
+      const selectedItems = printQueue.filter(q => selectedQueueIds.includes(q.id));
+
       const response = await fetch(`${backendUrl}/api/barcode/print-queue/process`, {
         method: 'POST',
         headers: {
@@ -408,10 +410,22 @@ export default function BarcodeManager({
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to process print queue');
 
-      setSuccess("Batch print completed successfully!");
+      // Dispatch printing overlay for physical printing
+      if (onPrintBarcode && selectedItems.length > 0) {
+        onPrintBarcode(selectedItems.map(item => ({
+          ...item,
+          id: item.sample_id,
+          barcode_text: item.barcode_value,
+          qr_code_base64: item.qr_code_base64,
+          code128_base64: item.code128_base64
+        })));
+      }
+
+      setSuccess(`Dispatched print job for ${selectedItems.length} label(s)!`);
       setSelectedQueueIds([]);
       fetchPrintQueue();
       fetchRegistryData();
+      if (onBarcodeAction) onBarcodeAction();
     } catch (err) {
       setError(err.message);
     }
@@ -701,6 +715,29 @@ export default function BarcodeManager({
 
       setActiveModal(null);
       setSuccess(`Storage coordinates assigned: ${location}`);
+
+      if (scannedResult && (scannedResult.barcode_value === targetBarcode.barcode_value || scannedResult.sample_id === targetBarcode.sample_id)) {
+        setScannedResult(prev => ({
+          ...prev,
+          storage_location: location,
+          current_storage_location: location,
+          sample_location: location,
+          status: 'STORED'
+        }));
+      }
+
+      if (detailedBarcode && (detailedBarcode.barcode?.barcode_value === targetBarcode.barcode_value || detailedBarcode.barcode?.sample_id === targetBarcode.sample_id)) {
+        setDetailedBarcode(prev => ({
+          ...prev,
+          barcode: {
+            ...prev.barcode,
+            storage_location: location,
+            sample_location: location,
+            status: 'STORED'
+          }
+        }));
+      }
+
       fetchRegistryData();
       if (onBarcodeAction) onBarcodeAction();
     } catch (err) {
@@ -1379,13 +1416,13 @@ export default function BarcodeManager({
                           <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>
                             {row.generated_at ? new Date(row.generated_at).toLocaleDateString() : '—'}
                           </td>
-                          <td style={{ padding: '12px 14px', color: row.current_storage_location ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
-                            {row.current_storage_location ? (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                📍 {row.current_storage_location}
+                          <td style={{ padding: '12px 14px', color: (row.current_storage_location || row.storage_location || row.sample_location) ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+                            {(row.current_storage_location || row.storage_location || row.sample_location) ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#10B981', fontWeight: '600' }}>
+                                📍 {row.current_storage_location || row.storage_location || row.sample_location}
                               </span>
                             ) : (
-                              'Unassigned'
+                              <span style={{ color: 'var(--text-tertiary)' }}>Unassigned</span>
                             )}
                           </td>
                           <td style={{ padding: '12px 14px' }}>
@@ -2164,7 +2201,13 @@ export default function BarcodeManager({
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-secondary)', fontSize: '10px', display: 'block' }}>Storage Location</span>
-                    <strong>{scannedResult.storage_location || 'Unassigned'}</strong>
+                    {(scannedResult.current_storage_location || scannedResult.storage_location || scannedResult.sample_location) ? (
+                      <strong style={{ color: '#10B981', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        📍 {scannedResult.current_storage_location || scannedResult.storage_location || scannedResult.sample_location}
+                      </strong>
+                    ) : (
+                      <span style={{ color: 'var(--text-tertiary)' }}>Unassigned</span>
+                    )}
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-secondary)', fontSize: '10px', display: 'block' }}>Consent Status</span>
@@ -2400,13 +2443,56 @@ export default function BarcodeManager({
               </div>
               <div>
                 <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px' }}>Storage Location</span>
-                <strong>{detailedBarcode.barcode.storage_location || 'Unassigned'}</strong>
+                {(detailedBarcode.barcode.current_storage_location || detailedBarcode.barcode.storage_location || detailedBarcode.barcode.sample_location) ? (
+                  <strong style={{ color: '#10B981', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    📍 {detailedBarcode.barcode.current_storage_location || detailedBarcode.barcode.storage_location || detailedBarcode.barcode.sample_location}
+                  </strong>
+                ) : (
+                  <span style={{ color: 'var(--text-tertiary)' }}>Unassigned</span>
+                )}
               </div>
               <div>
                 <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px' }}>Print Count</span>
                 <strong>{detailedBarcode.barcode.print_count} time(s)</strong>
               </div>
             </div>
+
+            {/* Quick Actions inside Details Modal */}
+            {detailedBarcode.barcode.status !== 'VOIDED' && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', paddingBottom: '4px' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    handleOpenStorage({
+                      ...detailedBarcode.barcode,
+                      storage_location: detailedBarcode.barcode.current_storage_location || detailedBarcode.barcode.storage_location || detailedBarcode.barcode.sample_location
+                    });
+                  }}
+                  style={{ padding: '6px 14px', fontSize: '12px', color: 'var(--accent-success)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  📍 {(detailedBarcode.barcode.current_storage_location || detailedBarcode.barcode.storage_location || detailedBarcode.barcode.sample_location) ? 'Move Storage' : 'Assign Storage'}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setTargetBarcode(detailedBarcode.barcode);
+                    setActiveModal('print');
+                  }}
+                  style={{ padding: '6px 14px', fontSize: '12px', color: 'var(--accent-cyan)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  🖨️ Print Label
+                </button>
+                {isTechnician && detailedBarcode.barcode.print_count > 0 && (
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => handleOpenReprint(detailedBarcode.barcode)}
+                    style={{ padding: '6px 14px', fontSize: '12px', color: 'var(--accent-warning)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    🔄 Reprint
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Child Aliquots (if any) */}
             {detailedBarcode.aliquots && detailedBarcode.aliquots.length > 0 && (
