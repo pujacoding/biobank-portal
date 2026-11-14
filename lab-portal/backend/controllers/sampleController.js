@@ -202,6 +202,8 @@ export async function registerSample(req, res, next) {
         consent_template_ids: selectedIds
       }
     });
+
+    invalidateDashboardStatsCache();
   } catch (error) {
     next(error);
   }
@@ -360,54 +362,75 @@ export async function getPublicSample(req, res, next) {
   }
 }
 
+const DASHBOARD_CACHE_TTL_MS = 60000;
+const dashboardStatsCache = new Map();
+
+export function invalidateDashboardStatsCache() {
+  dashboardStatsCache.clear();
+}
+
 /**
  * Get aggregated dashboard statistics
  */
 export async function getDashboardStats(req, res, next) {
   try {
-    const userCheck = await query("SELECT role_id, email, name FROM users WHERE id = $1", [req.user.userId]);
-    const userRow = userCheck.rows[0];
-    const userRoleId = parseInt(userRow?.role_id, 10);
-    const isSuperAdmin = req.user.role === 'Super Admin' || userRoleId === 1;
-    const isDemoUser = Boolean(
-      (userRow?.email && userRow.email.toLowerCase().includes('demo')) ||
-      (userRow?.name && userRow.name.toLowerCase().includes('demo')) ||
-      (req.user?.email && req.user.email.toLowerCase().includes('demo'))
+    const labId = req.user.labId;
+    const userId = req.user.userId;
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const cacheKey = `${userId}_${labId || 'all'}_${todayStr}`;
+
+    const cached = dashboardStatsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return res.json({
+        success: true,
+        stats: cached.stats,
+        cached: true
+      });
+    }
+
+    let userRoleId = req.user.roleId;
+    let isSuperAdmin = req.user.role === 'Super Admin' || userRoleId === 1;
+    let isDemoUser = Boolean(
+      (req.user.email && req.user.email.toLowerCase().includes('demo')) ||
+      (req.user.name && req.user.name.toLowerCase().includes('demo'))
     );
 
-    const labId = req.user.labId;
+    if (userRoleId === undefined || req.user.email === undefined) {
+      const userCheck = await query("SELECT role_id, email, name FROM users WHERE id = $1", [userId]);
+      const userRow = userCheck.rows[0];
+      userRoleId = parseInt(userRow?.role_id, 10);
+      isSuperAdmin = req.user.role === 'Super Admin' || userRoleId === 1;
+      isDemoUser = Boolean(
+        (userRow?.email && userRow.email.toLowerCase().includes('demo')) ||
+        (userRow?.name && userRow.name.toLowerCase().includes('demo')) ||
+        (req.user?.email && req.user.email.toLowerCase().includes('demo'))
+      );
+    }
 
     let sampleFilter = "";
     const params = [];
 
     if (isDemoUser) {
-      // Demo user: only count samples created by this demo user
       sampleFilter = " WHERE collector_id = $1";
-      params.push(req.user.userId);
+      params.push(userId);
     } else if (userRoleId === 4) {
-      // Collection Staff: count their own collections
       if (labId) {
         sampleFilter = " WHERE lab_id = $1 AND collector_id = $2";
-        params.push(labId, req.user.userId);
+        params.push(labId, userId);
       } else {
         sampleFilter = " WHERE collector_id = $1";
-        params.push(req.user.userId);
+        params.push(userId);
       }
     } else if (labId) {
-      // Lab-assigned or active lab selected
       sampleFilter = " WHERE lab_id = $1";
       params.push(labId);
     } else if (!isSuperAdmin) {
-      // Non-superadmin with no lab assigned
       sampleFilter = " WHERE collector_id = $1";
-      params.push(req.user.userId);
+      params.push(userId);
     }
-    // For Super Admin with no active lab, sampleFilter remains "" (global count)
 
-    const todayStr = new Date().toLocaleDateString('en-CA');
     const todayParamIdx = params.length + 1;
 
-    // Execute all sample aggregations in a single query + studies count in parallel
     const [aggRes, researchProjectsRes] = await Promise.all([
       query(
         `SELECT
@@ -444,19 +467,26 @@ export async function getDashboardStats(req, res, next) {
     const researchProjects = isDemoUser ? 0 : parseInt(researchProjectsRes.rows[0]?.count || 0, 10);
     const tempAlerts = 0;
 
+    const stats = {
+      totalSamples,
+      todayCollection,
+      storedSamples,
+      releasedSamples,
+      disposedSamples,
+      availableStorage,
+      totalCapacity,
+      researchProjects,
+      tempAlerts
+    };
+
+    dashboardStatsCache.set(cacheKey, {
+      stats,
+      expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS
+    });
+
     res.json({
       success: true,
-      stats: {
-        totalSamples,
-        todayCollection,
-        storedSamples,
-        releasedSamples,
-        disposedSamples,
-        availableStorage,
-        totalCapacity,
-        researchProjects,
-        tempAlerts
-      }
+      stats
     });
   } catch (error) {
     next(error);
@@ -500,6 +530,8 @@ export async function disposeSample(req, res, next) {
       sample.status,
       clientIp
     ]);
+
+    invalidateDashboardStatsCache();
 
     res.json({ success: true, message: `Sample ${id} has been successfully disposed.` });
   } catch (error) {
