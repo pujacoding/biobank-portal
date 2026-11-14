@@ -15,6 +15,7 @@ import ShipmentManagement from './components/ShipmentManagement';
 import TraceSpecimen from './components/TraceSpecimen';
 import SpecimenTypeMaster from './components/SpecimenTypeMaster';
 import Reports from './components/Reports';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const BACKEND_URL = API_BASE_URL;
 
@@ -1034,6 +1035,7 @@ export default function App() {
 
         {/* Viewport Content */}
         <main style={{ flex: 1, padding: '32px' }}>
+          <ErrorBoundary key={activeTab}>
           {activeTab === 'dashboard' && (
             <Dashboard 
               samples={samples} 
@@ -1185,6 +1187,7 @@ export default function App() {
               activeLabName={activeLabName}
             />
           )}
+          </ErrorBoundary>
         </main>
 
       </div>
