@@ -227,9 +227,9 @@ export default function ShipmentManagement({
   };
 
   // Step 5: Handle Barcode Scan at Destination Lab
-  const handleScanSubmit = async (e) => {
+  const handleScanSubmit = async (e, barcodeOverride) => {
     e?.preventDefault();
-    const barcode = scanInput.trim();
+    const barcode = (barcodeOverride !== undefined && barcodeOverride !== null ? String(barcodeOverride) : (scanInput || '')).trim();
     if (!barcode) return;
 
     setVerifyingScan(true);
@@ -260,7 +260,7 @@ export default function ShipmentManagement({
         setScanResult(data);
         setScanAlert({
           type: 'success',
-          message: `Barcode verified against Transfer ${data.shipment.transfer_id}! Proceed to inspect condition & accept custody.`
+          message: `Barcode verified against Transfer ${data.shipment?.transfer_id || data.shipment?.id || 'Manifest'}! Proceed to inspect condition & accept custody.`
         });
       }
     } catch (err) {
@@ -747,10 +747,9 @@ export default function ShipmentManagement({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {inTransitShipments.map((shipment) => {
-                const sample = (shipment.manifest_items && shipment.manifest_items[0]) || {
-                  id: shipment.tracking_number || 'BIO-2026-001',
-                  specimen_type: 'Plasma'
-                };
+                const rawSample = (shipment.manifest_items && shipment.manifest_items[0]) || null;
+                const sampleId = rawSample?.sample_id || rawSample?.id || rawSample?.barcode_value || shipment.tracking_number || shipment.id || 'BIO-2026-001';
+                const sampleType = rawSample?.specimen_type || rawSample?.sample_type || 'Plasma';
 
                 return (
                   <div 
@@ -768,7 +767,7 @@ export default function ShipmentManagement({
                     {/* TRANSFER HEADER */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '20px' }}>
                       <span style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                        Transfer {shipment.transfer_id || shipment.tracking_number || 'TRF-2026-001'}
+                        Transfer {shipment.transfer_id || shipment.id || shipment.tracking_number || 'TRF-2026-001'}
                       </span>
                       <span style={{
                         padding: '4px 12px',
@@ -793,14 +792,14 @@ export default function ShipmentManagement({
                       <div>
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Sample ID</div>
                         <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                          {sample.id}
+                          {sampleId}
                         </div>
                       </div>
 
                       <div>
                         <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Sample type</div>
                         <div style={{ fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)' }}>
-                          {sample.specimen_type || 'Plasma'}
+                          {sampleType}
                         </div>
                       </div>
 
@@ -909,8 +908,9 @@ export default function ShipmentManagement({
                         type="button"
                         className="btn btn-primary"
                         onClick={() => {
-                          setScanInput(sample.id);
+                          setScanInput(sampleId);
                           setActiveTabNav('receive_intake');
+                          handleScanSubmit(null, sampleId);
                         }}
                         style={{ padding: '8px 16px', fontSize: '12px', fontWeight: '700' }}
                       >
@@ -959,14 +959,14 @@ export default function ShipmentManagement({
                 type="text"
                 className="form-control"
                 placeholder="Scan or enter specimen barcode (e.g. BIO-2026-001)..."
-                value={scanInput}
+                value={scanInput || ''}
                 onChange={(e) => setScanInput(e.target.value)}
                 style={{ flex: 1, fontSize: '14px', fontFamily: 'monospace', padding: '10px 14px' }}
                 autoFocus
               />
               <button
                 type="submit"
-                disabled={verifyingScan || !scanInput.trim()}
+                disabled={verifyingScan || !(scanInput || '').trim()}
                 className="btn btn-primary"
                 style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '700', whiteSpace: 'nowrap' }}
               >
@@ -979,13 +979,15 @@ export default function ShipmentManagement({
               <div style={{ marginTop: '14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Awaiting receipt:</span>
                 {inTransitShipments.map(s => {
-                  const sId = s.manifest_items?.[0]?.id || s.tracking_number;
+                  const sId = s.manifest_items?.[0]?.sample_id || s.manifest_items?.[0]?.id || s.manifest_items?.[0]?.barcode_value || s.tracking_number || s.id;
+                  if (!sId) return null;
                   return (
                     <button
                       key={s.id}
                       type="button"
                       onClick={() => {
                         setScanInput(sId);
+                        handleScanSubmit(null, sId);
                       }}
                       style={{
                         background: 'var(--bg-primary)',
@@ -1020,7 +1022,7 @@ export default function ShipmentManagement({
                     Manifest Match Verified
                   </span>
                   <h3 style={{ fontSize: '17px', fontWeight: '800', color: 'var(--text-primary)', margin: '4px 0 0 0', fontFamily: 'monospace' }}>
-                    {scanResult.sample.id} &bull; {scanResult.sample.specimen_type || 'Plasma'}
+                    {scanResult.sample?.id || scanResult.sample?.sample_id} &bull; {scanResult.sample?.specimen_type || 'Plasma'}
                   </h3>
                 </div>
 
@@ -1029,11 +1031,11 @@ export default function ShipmentManagement({
                   borderRadius: '6px',
                   fontSize: '11px',
                   fontWeight: '700',
-                  background: scanResult.sample.status === 'Received' ? 'rgba(0, 242, 254, 0.15)' : scanResult.sample.status === 'Quarantined' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-                  color: scanResult.sample.status === 'Received' ? 'var(--accent-cyan)' : scanResult.sample.status === 'Quarantined' ? '#eab308' : '#38bdf8',
+                  background: scanResult.sample?.status === 'Received' ? 'rgba(0, 242, 254, 0.15)' : scanResult.sample?.status === 'Quarantined' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                  color: scanResult.sample?.status === 'Received' ? 'var(--accent-cyan)' : scanResult.sample?.status === 'Quarantined' ? '#eab308' : '#38bdf8',
                   border: '1px solid currentColor'
                 }}>
-                  {scanResult.sample.status}
+                  {scanResult.sample?.status}
                 </span>
               </div>
 
@@ -1042,34 +1044,34 @@ export default function ShipmentManagement({
                 <div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Consignment Transfer ID</div>
                   <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                    {scanResult.shipment.transfer_id || scanResult.shipment.tracking_number}
+                    {scanResult.shipment?.transfer_id || scanResult.shipment?.tracking_number || scanResult.shipment?.id}
                   </div>
                 </div>
 
                 <div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Origin Laboratory</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
-                    {scanResult.shipment.origin_lab_name || 'Collection Center A'}
+                    {scanResult.shipment?.origin_lab_name || 'Collection Center A'}
                   </div>
                 </div>
 
                 <div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Dispatched Custodian</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
-                    {scanResult.shipment.dispatched_by || 'Lab Technician'}
+                    {scanResult.shipment?.dispatched_by || 'Lab Technician'}
                   </div>
                 </div>
 
                 <div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Transport Temperature</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
-                    {scanResult.shipment.temperature || 'Per validated SOP'}
+                    {scanResult.shipment?.temperature || 'Per validated SOP'}
                   </div>
                 </div>
               </div>
 
               {/* STEP 6 ACTIONS: ACCEPT OR QUARANTINE */}
-              {scanResult.sample.status !== 'Received' && scanResult.sample.status !== 'Quarantined' && (
+              {scanResult.sample?.status !== 'Received' && scanResult.sample?.status !== 'Quarantined' && (
                 <div style={{
                   borderTop: '1px solid var(--border-color)',
                   paddingTop: '18px',
@@ -1108,7 +1110,7 @@ export default function ShipmentManagement({
                     <button
                       type="button"
                       disabled={actionLoading}
-                      onClick={() => handleAcceptSample(scanResult.sample.id, scanResult.shipment.id)}
+                      onClick={() => handleAcceptSample(scanResult.sample?.id, scanResult.shipment?.id)}
                       className="btn btn-primary"
                       style={{ padding: '8px 18px', fontSize: '12px', fontWeight: '700' }}
                     >
@@ -1119,7 +1121,7 @@ export default function ShipmentManagement({
               )}
 
               {/* STEP 7: ASSIGN STORAGE LOCATION (IF ACCEPTED) */}
-              {scanResult.sample.status === 'Received' && (
+              {scanResult.sample?.status === 'Received' && (
                 <div style={{
                   borderTop: '1px solid var(--border-color)',
                   paddingTop: '18px',
@@ -1142,7 +1144,7 @@ export default function ShipmentManagement({
 
                   <button
                     type="button"
-                    onClick={() => handleProceedToStore(scanResult.sample.id)}
+                    onClick={() => handleProceedToStore(scanResult.sample?.id)}
                     className="btn btn-primary"
                     style={{
                       padding: '10px 18px',
@@ -1159,7 +1161,7 @@ export default function ShipmentManagement({
               )}
 
               {/* QUARANTINED NOTICE */}
-              {scanResult.sample.status === 'Quarantined' && (
+              {scanResult.sample?.status === 'Quarantined' && (
                 <div style={{
                   borderTop: '1px solid var(--border-color)',
                   paddingTop: '14px',
