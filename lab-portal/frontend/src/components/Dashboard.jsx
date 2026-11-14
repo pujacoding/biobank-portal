@@ -1,23 +1,127 @@
 import React, { useState, useEffect } from 'react';
 
-export default function Dashboard({ samples, globalTotal, setActiveTab, user, activeLabId, activeLabName, backendUrl, token }) {
-  const [stats, setStats] = useState({
-    totalSamples: 0,
-    todayCollection: 0,
-    storedSamples: 0,
-    releasedSamples: 0,
-    disposedSamples: 0,
-    availableStorage: 0,
-    totalCapacity: 0,
-    researchProjects: 0,
-    tempAlerts: 0
-  });
-  const [loading, setLoading] = useState(true);
-
-  // Compute local today string for display fallback
+/**
+ * Computes telemetry stats instantly (0ms) from in-memory sample list.
+ */
+function computeStatsFromSamples(sampleList = [], labId = '') {
   const todayStr = new Date().toLocaleDateString('en-CA');
+  const relevant = labId 
+    ? sampleList.filter(s => String(s.lab_id) === String(labId))
+    : sampleList;
 
+  let totalSamples = relevant.length;
+  let todayCollection = 0;
+  let storedSamples = 0;
+  let releasedSamples = 0;
+  let disposedSamples = 0;
+
+  for (const s of relevant) {
+    if (s.collection_date === todayStr) {
+      todayCollection++;
+    }
+    const isStored = s.status === 'Stored' || (s.location && !['Disposed', 'Released', 'Retrieved'].includes(s.status) && s.retrieval_status === 'Stored');
+    if (isStored) {
+      storedSamples++;
+    }
+    const isReleased = ['Released', 'Retrieved', 'Allocated'].includes(s.status) || ['Released', 'Retrieved', 'Allocated'].includes(s.retrieval_status);
+    if (isReleased) {
+      releasedSamples++;
+    }
+    const isDisposed = s.status === 'Disposed' || s.retrieval_status === 'Disposed';
+    if (isDisposed) {
+      disposedSamples++;
+    }
+  }
+
+  const totalCapacity = 500;
+  const availableStorage = Math.max(0, totalCapacity - storedSamples);
+
+  return {
+    totalSamples,
+    todayCollection,
+    storedSamples,
+    releasedSamples,
+    disposedSamples,
+    availableStorage,
+    totalCapacity,
+    researchProjects: 0,
+    tempAlerts: 0,
+    isInitialDefault: false
+  };
+}
+
+export default function Dashboard({ samples = [], globalTotal, setActiveTab, user, activeLabId, activeLabName, backendUrl, token }) {
+  // Initialize state immediately from session cache or in-memory samples (0ms instant render)
+  const [stats, setStats] = useState(() => {
+    try {
+      const activeLab = sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id') || activeLabId || 'global';
+      const cacheKey = `aura_dashboard_stats_${activeLab}_${user?.id || 'u'}`;
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed.totalSamples === 'number') {
+          return { ...parsed, isInitialDefault: false };
+        }
+      }
+    } catch {
+      // Ignore storage errors
+    }
+
+    if (samples && samples.length > 0) {
+      return computeStatsFromSamples(samples, activeLabId);
+    }
+
+    if (globalTotal && globalTotal > 0) {
+      return {
+        totalSamples: globalTotal,
+        todayCollection: 0,
+        storedSamples: 0,
+        releasedSamples: 0,
+        disposedSamples: 0,
+        availableStorage: 500,
+        totalCapacity: 500,
+        researchProjects: 0,
+        tempAlerts: 0,
+        isInitialDefault: true
+      };
+    }
+
+    return {
+      totalSamples: 0,
+      todayCollection: 0,
+      storedSamples: 0,
+      releasedSamples: 0,
+      disposedSamples: 0,
+      availableStorage: 0,
+      totalCapacity: 0,
+      researchProjects: 0,
+      tempAlerts: 0,
+      isInitialDefault: true
+    };
+  });
+
+  const [loading, setLoading] = useState(() => stats.isInitialDefault);
+
+  // When samples prop becomes available or updates, compute instant stats if backend hasn't responded yet
   useEffect(() => {
+    if (samples && samples.length > 0) {
+      setStats(prev => {
+        if (prev.isInitialDefault || prev.totalSamples === 0) {
+          const computed = computeStatsFromSamples(samples, activeLabId);
+          return {
+            ...computed,
+            researchProjects: prev.researchProjects || 0
+          };
+        }
+        return prev;
+      });
+      setLoading(false);
+    }
+  }, [samples, activeLabId]);
+
+  // Background SWR fetch from backend (silent revalidation)
+  useEffect(() => {
+    let isMounted = true;
     const fetchDashboardStats = async () => {
       if (!token || !backendUrl) return;
       try {
@@ -28,25 +132,75 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
             ...(activeLab ? { 'x-active-lab-id': activeLab } : {})
           }
         });
-        const data = await response.json();
-        if (response.ok && data.success) {
-          setStats(data.stats);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && isMounted) {
+            setStats(prev => ({
+              ...data.stats,
+              isInitialDefault: false
+            }));
+            setLoading(false);
+            try {
+              const cacheKey = `aura_dashboard_stats_${activeLab || 'global'}_${user?.id || 'u'}`;
+              sessionStorage.setItem(cacheKey, JSON.stringify(data.stats));
+            } catch {
+              // Ignore storage errors
+            }
+          }
         }
       } catch (err) {
         console.error("Error fetching dashboard statistics:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchDashboardStats();
-  }, [backendUrl, token, samples, activeLabId]);
+    return () => { isMounted = false; };
+  }, [backendUrl, token, activeLabId, user?.id]);
 
   // Last 5 samples for the recent registrations table
   const recentSamples = samples.slice(0, 5);
 
+  // Helper to render metric count or skeleton placeholder while loading
+  const renderMetric = (val, isStorage = false) => {
+    if (loading && stats.isInitialDefault && (val === 0 || val === undefined)) {
+      return (
+        <span style={{
+          display: 'inline-block',
+          width: '36px',
+          height: '20px',
+          background: 'rgba(255, 255, 255, 0.1)',
+          borderRadius: '4px',
+          animation: 'dashPulse 1.2s ease-in-out infinite'
+        }} />
+      );
+    }
+    if (isStorage) {
+      return (
+        <>
+          {val}
+          {stats.totalCapacity ? (
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}> / {stats.totalCapacity}</span>
+          ) : (
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}> / 500</span>
+          )}
+        </>
+      );
+    }
+    return val;
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      <style>{`
+        @keyframes dashPulse {
+          0% { opacity: 0.3; }
+          50% { opacity: 0.8; }
+          100% { opacity: 0.3; }
+        }
+      `}</style>
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'left' }}>
         <h1 style={{ fontSize: '28px', fontWeight: '700', letterSpacing: '-0.02em' }}>
           Welcome back, <span className="title-gradient">{user.name}</span>
@@ -78,7 +232,9 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
           </div>
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Samples</span>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.totalSamples}</h3>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>
+              {renderMetric(stats.totalSamples)}
+            </h3>
           </div>
         </div>
 
@@ -104,7 +260,9 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
           </div>
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Today's Collection</span>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.todayCollection}</h3>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>
+              {renderMetric(stats.todayCollection)}
+            </h3>
           </div>
         </div>
 
@@ -129,7 +287,9 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
           </div>
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stored Samples</span>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.storedSamples}</h3>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>
+              {renderMetric(stats.storedSamples)}
+            </h3>
           </div>
         </div>
 
@@ -154,7 +314,9 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
           </div>
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Released Samples</span>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.releasedSamples}</h3>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>
+              {renderMetric(stats.releasedSamples)}
+            </h3>
           </div>
         </div>
 
@@ -180,7 +342,9 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
           </div>
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Disposed Samples</span>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.disposedSamples}</h3>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>
+              {renderMetric(stats.disposedSamples)}
+            </h3>
           </div>
         </div>
 
@@ -206,12 +370,7 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Available Storage</span>
             <h3 style={{ fontSize: '20px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>
-              {stats.availableStorage}
-              {stats.totalCapacity ? (
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}> / {stats.totalCapacity}</span>
-              ) : (
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}> / 0</span>
-              )}
+              {renderMetric(stats.availableStorage, true)}
             </h3>
           </div>
         </div>
@@ -238,7 +397,9 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
           </div>
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Research Projects</span>
-            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>{stats.researchProjects}</h3>
+            <h3 style={{ fontSize: '22px', fontWeight: '700', color: 'var(--text-primary)', marginTop: '2px' }}>
+              {renderMetric(stats.researchProjects)}
+            </h3>
           </div>
         </div>
 
@@ -383,4 +544,3 @@ export default function Dashboard({ samples, globalTotal, setActiveTab, user, ac
     </div>
   );
 }
-

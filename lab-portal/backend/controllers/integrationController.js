@@ -1,4 +1,5 @@
 import { query, getClient } from '../services/dbService.js';
+import { invalidateDashboardStatsCache } from './sampleController.js';
 
 /**
  * Get overall biobank telemetry statistics
@@ -515,6 +516,7 @@ export async function storeSample(req, res, next) {
     `, [targetSampleId, location, userId]);
 
     await client.query('COMMIT');
+    invalidateDashboardStatsCache();
 
     res.json({ success: true, message: `Specimen ${targetSampleId} successfully allocated and stored at ${location}.` });
   } catch (error) {
@@ -1090,6 +1092,7 @@ export async function acceptTransferSample(req, res, next) {
     }
 
     await client.query('COMMIT');
+    invalidateDashboardStatsCache();
 
     res.json({
       success: true,
@@ -1159,6 +1162,7 @@ export async function quarantineTransferSample(req, res, next) {
     `, [sample_id, `Quarantined at destination during transfer ${shipment_id}. Non-conformance: ${reason}${notes ? ` - ${notes}` : ''}`, userId]);
 
     await client.query('COMMIT');
+    invalidateDashboardStatsCache();
 
     res.json({
       success: true,
