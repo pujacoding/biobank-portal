@@ -93,6 +93,8 @@ export default function InventoryStorage({
       const match = samples.find(s => s.id === preSelectedSampleId || s.barcode_text === preSelectedSampleId || s.barcode_value === preSelectedSampleId);
       if (match) {
         handleQuickAllocate(match);
+      } else {
+        handleQuickAllocate({ id: preSelectedSampleId });
       }
       if (setPreSelectedSampleId) {
         setPreSelectedSampleId('');

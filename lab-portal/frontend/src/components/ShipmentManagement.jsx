@@ -369,13 +369,13 @@ export default function ShipmentManagement({
     }
   };
 
-  // Step 7: Proceed to Storage Allocation (Direct Hand-off to Inventory tab)
+  // Step 7: Proceed to Storage Allocation (Direct Hand-off to Inventory & Storage tab)
   const handleProceedToStore = (sampleId) => {
     if (setPreSelectedSampleId) {
       setPreSelectedSampleId(sampleId);
     }
     if (setActiveTab) {
-      setActiveTab('inventory');
+      setActiveTab('storage');
     }
   };
 
