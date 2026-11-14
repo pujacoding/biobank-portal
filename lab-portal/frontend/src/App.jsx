@@ -21,16 +21,20 @@ const BACKEND_URL = API_BASE_URL;
 
 export default function App() {
   const [token, setToken] = useState(() => {
-    // Purge legacy persistent localStorage auth tokens
-    localStorage.removeItem('aura_lab_token');
-    localStorage.removeItem('aura_lab_user');
-    return sessionStorage.getItem('aura_lab_token') || null;
+    return localStorage.getItem('aura_lab_token') || sessionStorage.getItem('aura_lab_token') || null;
   });
   const [user, setUser] = useState(() => {
-    const saved = sessionStorage.getItem('aura_lab_user');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem('aura_lab_user') || sessionStorage.getItem('aura_lab_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
   });
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => {
+    const savedTab = sessionStorage.getItem('aura_active_tab') || localStorage.getItem('aura_active_tab');
+    return (savedTab && savedTab !== 'inventory') ? savedTab : 'dashboard';
+  });
   const [samples, setSamples] = useState([]);
   const [globalTotal, setGlobalTotal] = useState(0);
   const [theme, setTheme] = useState(localStorage.getItem('aura_lab_theme') || 'dark');
@@ -44,18 +48,22 @@ export default function App() {
   // Active Lab Context States
   const [accessibleLabs, setAccessibleLabs] = useState([]);
   const [activeLabId, setActiveLabId] = useState(() => {
-    const savedUser = JSON.parse(sessionStorage.getItem('aura_lab_user') || 'null');
-    if (savedUser && savedUser.lab_id !== null && savedUser.lab_id !== undefined) {
-      return savedUser.lab_id;
-    }
-    return sessionStorage.getItem('aura_active_lab_id') || localStorage.getItem('aura_active_lab_id') || '';
+    try {
+      const savedUser = JSON.parse(localStorage.getItem('aura_lab_user') || sessionStorage.getItem('aura_lab_user') || 'null');
+      if (savedUser && savedUser.lab_id !== null && savedUser.lab_id !== undefined) {
+        return savedUser.lab_id;
+      }
+    } catch (e) {}
+    return localStorage.getItem('aura_active_lab_id') || sessionStorage.getItem('aura_active_lab_id') || '';
   });
   const [activeLabName, setActiveLabName] = useState(() => {
-    const savedUser = JSON.parse(sessionStorage.getItem('aura_lab_user') || 'null');
-    if (savedUser && savedUser.lab_id !== null && savedUser.lab_id !== undefined) {
-      return savedUser.lab_name || '';
-    }
-    return sessionStorage.getItem('aura_active_lab_name') || localStorage.getItem('aura_active_lab_name') || '';
+    try {
+      const savedUser = JSON.parse(localStorage.getItem('aura_lab_user') || sessionStorage.getItem('aura_lab_user') || 'null');
+      if (savedUser && savedUser.lab_id !== null && savedUser.lab_id !== undefined) {
+        return savedUser.lab_name || '';
+      }
+    } catch (e) {}
+    return localStorage.getItem('aura_active_lab_name') || sessionStorage.getItem('aura_active_lab_name') || '';
   });
 
   const hasPermission = (permissionName) => {
@@ -183,17 +191,27 @@ export default function App() {
     }
   }, [token, activeLabId]);
 
+  // Persist activeTab across browser refreshes
+  useEffect(() => {
+    if (activeTab) {
+      sessionStorage.setItem('aura_active_tab', activeTab);
+      localStorage.setItem('aura_active_tab', activeTab);
+    }
+  }, [activeTab]);
+
   const handleLoginSuccess = (newToken, newUser) => {
+    localStorage.setItem('aura_lab_token', newToken);
+    localStorage.setItem('aura_lab_user', JSON.stringify(newUser));
     sessionStorage.setItem('aura_lab_token', newToken);
     sessionStorage.setItem('aura_lab_user', JSON.stringify(newUser));
-    localStorage.removeItem('aura_lab_token');
-    localStorage.removeItem('aura_lab_user');
     // If the user has a specific assigned lab, auto-set it as active
     if (newUser.lab_id !== null && newUser.lab_id !== undefined) {
-      sessionStorage.setItem('aura_active_lab_id', newUser.lab_id);
-      sessionStorage.setItem('aura_active_lab_name', newUser.lab_name);
+      localStorage.setItem('aura_active_lab_id', String(newUser.lab_id));
+      localStorage.setItem('aura_active_lab_name', newUser.lab_name || '');
+      sessionStorage.setItem('aura_active_lab_id', String(newUser.lab_id));
+      sessionStorage.setItem('aura_active_lab_name', newUser.lab_name || '');
       setActiveLabId(newUser.lab_id);
-      setActiveLabName(newUser.lab_name);
+      setActiveLabName(newUser.lab_name || '');
     } else {
       sessionStorage.removeItem('aura_active_lab_id');
       sessionStorage.removeItem('aura_active_lab_name');
@@ -215,10 +233,12 @@ export default function App() {
     sessionStorage.removeItem('aura_lab_user');
     sessionStorage.removeItem('aura_active_lab_id');
     sessionStorage.removeItem('aura_active_lab_name');
+    sessionStorage.removeItem('aura_active_tab');
     localStorage.removeItem('aura_lab_token');
     localStorage.removeItem('aura_lab_user');
     localStorage.removeItem('aura_active_lab_id');
     localStorage.removeItem('aura_active_lab_name');
+    localStorage.removeItem('aura_active_tab');
     setActiveLabId('');
     setActiveLabName('');
     setActiveTab('dashboard');
@@ -532,10 +552,10 @@ export default function App() {
                     width: '100%',
                     padding: '10px 12px',
                     borderRadius: 'var(--border-radius-sm)',
-                    background: activeTab === 'storage' ? 'var(--border-color)' : 'transparent',
+                    background: (activeTab === 'storage' || activeTab === 'inventory') ? 'var(--border-color)' : 'transparent',
                     border: 'none',
-                    color: activeTab === 'storage' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    fontWeight: activeTab === 'storage' ? '700' : '500',
+                    color: (activeTab === 'storage' || activeTab === 'inventory') ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    fontWeight: (activeTab === 'storage' || activeTab === 'inventory') ? '700' : '500',
                     fontSize: '13px',
                     display: 'flex',
                     alignItems: 'center',
@@ -1119,7 +1139,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'storage' && (
+          {(activeTab === 'storage' || activeTab === 'inventory') && (
             <InventoryStorage 
               samples={samples} 
               backendUrl={BACKEND_URL} 
