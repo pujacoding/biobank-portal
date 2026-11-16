@@ -63,7 +63,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
           doc.setFont("Helvetica", "italic");
           doc.setFontSize(8);
           doc.setTextColor(150, 150, 150);
-          doc.text("AURA Biobank Consent Document", margin, margin);
+          doc.text("ANIVORA BioBank Authorization Document", margin, margin);
           doc.line(margin, margin + 2, margin + printableWidth, margin + 2);
         }
       };
@@ -90,10 +90,10 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
       };
 
       // Header Page 1
-      printText("AURA BIOBANK", margin, currentY, 18, "bold", [59, 130, 246]);
+      printText("ANIVORA BIOBANK", margin, currentY, 18, "bold", [59, 130, 246]);
       currentY += 8;
 
-      printText("INFORMED CONSENT AGREEMENT RECORD", margin, currentY, 14, "bold", [31, 41, 55]);
+      printText("VETERINARY CUSTODIAN AUTHORIZATION & ETHICS RECORD", margin, currentY, 14, "bold", [31, 41, 55]);
       currentY += 5;
 
       // Divider line
@@ -263,11 +263,11 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
       currentY += 6;
       printText("For any queries or withdrawal:", margin, currentY, 9, "normal");
       currentY += 5;
-      printText("Institution: Aura Biobank Admin Center", margin, currentY, 9, "normal");
+      printText("Institution: ANIVORA BioBank Admin Center", margin, currentY, 9, "normal");
       currentY += 5;
       printText("Contact Number: +1 (555) 019-2838", margin, currentY, 9, "normal");
       currentY += 5;
-      printText("Email: support@aurabiobank.org", margin, currentY, 9, "normal");
+      printText("Email: support@anivorabiobank.org", margin, currentY, 9, "normal");
 
       // Save PDF
       doc.save(`Consent_${consentItem.subject_id}_${consentItem.consent_id || 'Document'}.pdf`);
@@ -281,6 +281,9 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
   const [consentVersion, setConsentVersion] = useState('v1.0');
   const [consentDate, setConsentDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [consentFile, setConsentFile] = useState(null);
+  const [ownerCustodianName, setOwnerCustodianName] = useState('');
+  const [ethicsPermitRef, setEthicsPermitRef] = useState('');
+  const [authorizationType, setAuthorizationType] = useState('Owner / Custodian Authorization');
 
   useEffect(() => {
     if (preSelectedSampleId) {
@@ -338,9 +341,15 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
     if (selectedSample) {
       setConsentVersion(selectedSample.consent_version || 'v1.0');
       setConsentDate(selectedSample.consent_date || new Date().toLocaleDateString('en-CA'));
+      setOwnerCustodianName(selectedSample.owner_custodian_id || selectedSample.owner_custodian_name || '');
+      setEthicsPermitRef(selectedSample.ethics_permit_ref || '');
+      setAuthorizationType(selectedSample.authorization_type || 'Owner / Custodian Authorization');
     } else {
       setConsentVersion('v1.0');
       setConsentDate(new Date().toLocaleDateString('en-CA'));
+      setOwnerCustodianName('');
+      setEthicsPermitRef('');
+      setAuthorizationType('Owner / Custodian Authorization');
     }
   }, [selectedSampleId, selectedSample]);
 
@@ -404,7 +413,11 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
           consent_version: consentVersion,
           consent_date: consentDate,
           document_name: documentName,
-          status: targetStatus
+          status: targetStatus,
+          animal_id: selectedSample?.animal_id || selectedSample?.subject_id,
+          owner_custodian_name: ownerCustodianName || selectedSample?.owner_custodian_id,
+          ethics_permit_ref: ethicsPermitRef,
+          authorization_type: authorizationType
         })
       });
 
@@ -679,7 +692,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                   }
                   return (
                     <option key={s.id} value={s.id}>
-                      {s.id} ({s.specimen_type} &bull; Subject: {s.subject_id}{statusText})
+                      {s.id} ({s.specimen_type} &bull; Animal: {s.animal_id || s.subject_id}{s.species ? ` [${s.species}]` : ''}{statusText})
                     </option>
                   );
                 })}
@@ -895,7 +908,46 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                 <form onSubmit={handleSubmitConsent} style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label htmlFor="consent-ver-mgr">Consent Version *</label>
+                    <label htmlFor="auth-type-mgr">Authorization Type *</label>
+                    <select
+                      id="auth-type-mgr"
+                      className="form-control"
+                      value={authorizationType}
+                      onChange={(e) => setAuthorizationType(e.target.value)}
+                    >
+                      <option value="Owner / Custodian Authorization">Owner / Custodian Authorization</option>
+                      <option value="Institutional Ethics Approval">Institutional Ethics Approval (IACUC / ERC)</option>
+                      <option value="Wildlife Regulatory Permit">Wildlife Regulatory Permit</option>
+                      <option value="Research Transfer Consent">Research Transfer Consent</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="custodian-name-mgr">Owner / Authorized Custodian</label>
+                    <input
+                      type="text"
+                      id="custodian-name-mgr"
+                      className="form-control"
+                      placeholder="e.g. Jane Doe (Owner) / Dr. Smith"
+                      value={ownerCustodianName}
+                      onChange={(e) => setOwnerCustodianName(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="ethics-ref-mgr">Ethics Permit / Protocol Ref</label>
+                    <input
+                      type="text"
+                      id="ethics-ref-mgr"
+                      className="form-control"
+                      placeholder="e.g. IACUC-2026-VET-042"
+                      value={ethicsPermitRef}
+                      onChange={(e) => setEthicsPermitRef(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="consent-ver-mgr">Authorization Version *</label>
                     <input
                       type="text"
                       id="consent-ver-mgr"
@@ -906,7 +958,7 @@ export default function ConsentManagement({ samples, user, backendUrl, token, on
                     />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label htmlFor="consent-dt-mgr">Consent Signed Date *</label>
+                    <label htmlFor="consent-dt-mgr">Signed / Approval Date *</label>
                     <input
                       type="date"
                       id="consent-dt-mgr"

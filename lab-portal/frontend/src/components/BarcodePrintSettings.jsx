@@ -178,7 +178,7 @@ export default function BarcodePrintSettings({ batchSamples, onClose }) {
               >
                 <div style={{ textAlign: 'left', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '1px' }}>
                   <div style={{ fontSize: is65 ? '8px' : '9px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    AURA BIOBANK
+                    ANIVORA BIOBANK
                   </div>
                   <div style={{ fontSize: is65 ? '7px' : '8px', color: '#475569', fontWeight: '700', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     ID: {barcodeVal}

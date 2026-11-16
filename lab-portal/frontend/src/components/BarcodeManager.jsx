@@ -83,7 +83,7 @@ export default function BarcodeManager({
   const [reprintNotes, setReprintNotes] = useState('');
   const [voidReason, setVoidReason] = useState('');
   const [replaceReason, setReplaceReason] = useState('');
-  const [shipmentDestination, setShipmentDestination] = useState('AURA Central Biobank - LN2 Cryo Tank Yard');
+  const [shipmentDestination, setShipmentDestination] = useState('ANIVORA Central Biobank - LN2 Cryo Tank Yard');
   const [newAliquotCount, setNewAliquotCount] = useState(2);
   const [newAliquotVol, setNewAliquotVol] = useState(1.0);
 
@@ -670,7 +670,7 @@ export default function BarcodeManager({
 
   const handleOpenShipment = (barcode) => {
     setTargetBarcode(barcode);
-    setShipmentDestination('AURA Central Biobank - LN2 Cryo Tank Yard');
+    setShipmentDestination('ANIVORA Central Biobank - LN2 Cryo Tank Yard');
     setActiveModal('shipment');
   };
 
@@ -1054,7 +1054,7 @@ export default function BarcodeManager({
                 <div style={{ position: 'relative' }}>
                   <input
                     type="text"
-                    placeholder="Search by AURA-..., SUBJ-..., position..."
+                    placeholder="Search by ANV-..., ANV-VET-..., position..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && fetchRegistryData()}
@@ -1653,7 +1653,7 @@ export default function BarcodeManager({
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px' }}>Collection Site</span>
-                    <strong>{selectedSampleForGen.collection_site || 'AURA Central Lab'}</strong>
+                    <strong>{selectedSampleForGen.collection_site || 'ANIVORA Central Lab'}</strong>
                   </div>
                 </div>
 
@@ -1729,23 +1729,23 @@ export default function BarcodeManager({
                     boxShadow: '0 4px 16px rgba(0,0,0,0.5)'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #000', paddingBottom: '4px' }}>
-                      <span style={{ fontWeight: '900', fontSize: '12px', letterSpacing: '0.05em' }}>AURA BIOBANK</span>
-                      <span style={{ fontSize: '10px' }}>ISBER Cryo</span>
+                      <span style={{ fontWeight: '900', fontSize: '12px', letterSpacing: '0.05em' }}>ANIVORA BIOBANK</span>
+                      <span style={{ fontSize: '10px' }}>Veterinary Cryo</span>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <span style={{ fontSize: '13px', fontWeight: '900' }}>
-                          AURA-260928-XXXXXX
+                          ANV-260928-XXXXXX
                         </span>
                         <span style={{ fontSize: '11px', fontWeight: '700' }}>
                           {selectedSampleForGen.specimen_type} | {selectedSampleForGen.sample_volume} {selectedSampleForGen.volume_unit}
                         </span>
                         <span style={{ fontSize: '10px' }}>
-                          Col: {selectedSampleForGen.collection_date}
+                          Animal: {selectedSampleForGen.animal_id || selectedSampleForGen.coded_participant_id || 'ANV-VET-X'} {selectedSampleForGen.species ? `(${selectedSampleForGen.species})` : ''}
                         </span>
                         <span style={{ fontSize: '9px', color: '#555' }}>
-                          ID: {selectedSampleForGen.coded_participant_id || 'SUBJ-X'}
+                          Col: {selectedSampleForGen.collection_date}
                         </span>
                       </div>
 
@@ -2505,8 +2505,8 @@ export default function BarcodeManager({
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #000', paddingBottom: '4px' }}>
-                <span style={{ fontWeight: '900', fontSize: '13px', letterSpacing: '0.05em' }}>AURA BIOBANK</span>
-                <span style={{ fontSize: '10px', fontWeight: '700' }}>CRYO COMPLIANT</span>
+                <span style={{ fontWeight: '900', fontSize: '13px', letterSpacing: '0.05em' }}>ANIVORA BIOBANK</span>
+                <span style={{ fontSize: '10px', fontWeight: '700' }}>VETERINARY SPECIMEN</span>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
@@ -2518,7 +2518,7 @@ export default function BarcodeManager({
                     {targetBarcode.specimen_type} | {targetBarcode.volume || targetBarcode.sample_volume} {targetBarcode.volume_unit || 'mL'}
                   </span>
                   <span style={{ fontSize: '10px' }}>
-                    Date: {targetBarcode.collection_date || new Date().toLocaleDateString()}
+                    Animal: {targetBarcode.animal_id || targetBarcode.coded_participant_id || targetBarcode.subject_id || 'N/A'} {targetBarcode.species ? `(${targetBarcode.species})` : ''}
                   </span>
                   <span style={{ fontSize: '10px', color: '#444' }}>
                     Sample: {targetBarcode.sample_id || targetBarcode.id}
@@ -3026,8 +3026,8 @@ export default function BarcodeManager({
                     fontSize: '12px'
                   }}
                 >
-                  <option value="AURA Central Biobank - LN2 Cryo Tank Yard">AURA Central Biobank - LN2 Cryo Tank Yard</option>
-                  <option value="AURA Central Biobank - ULT Storage Wing">AURA Central Biobank - ULT Storage Wing</option>
+                  <option value="ANIVORA Central Biobank - LN2 Cryo Tank Yard">ANIVORA Central Biobank - LN2 Cryo Tank Yard</option>
+                  <option value="ANIVORA Central Biobank - ULT Storage Wing">ANIVORA Central Biobank - ULT Storage Wing</option>
                   <option value="Partner Research Center - Genomics Wing">Partner Research Center - Genomics Wing</option>
                 </select>
               </div>

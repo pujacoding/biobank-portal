@@ -32,6 +32,7 @@ app.use(express.json({ limit: '10mb' }));
 // =========================
 app.use('/api/auth', authRoutes);
 app.use('/api/samples', sampleRoutes);
+app.use('/api/animals', sampleRoutes);
 app.use('/api/consent', consentRoutes);
 app.use('/api/barcode', barcodeRoutes);
 app.use('/api/audit', auditRoutes);
@@ -56,7 +57,7 @@ app.get('/api/status', (req, res) => {
 // ROOT ROUTE
 // =========================
 app.get('/', (req, res) => {
-  res.send('AURA Biobank Lab Portal API is running 🚀');
+  res.send('ANIVORA BioBank Lab Portal API is running 🚀');
 });
 
 // =========================

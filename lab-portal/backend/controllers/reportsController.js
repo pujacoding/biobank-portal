@@ -189,7 +189,7 @@ export async function getReportData(req, res, next) {
       } else if (['audit-trail', 'user-sessions', 'inventory-movement', 'storage-movement', 'disposal-history'].includes(reportType)) {
         filterQueries.push(`(logs.user_name ILIKE $${paramIndex} OR logs.action_type ILIKE $${paramIndex} OR logs.entity_id ILIKE $${paramIndex} OR logs.new_value ILIKE $${paramIndex})`);
       } else {
-        filterQueries.push(`(s.id ILIKE $${paramIndex} OR s.subject_id ILIKE $${paramIndex} OR s.diagnosis ILIKE $${paramIndex})`);
+        filterQueries.push(`(s.id ILIKE $${paramIndex} OR s.subject_id ILIKE $${paramIndex} OR s.animal_id ILIKE $${paramIndex} OR s.species ILIKE $${paramIndex} OR s.breed ILIKE $${paramIndex} OR s.diagnosis ILIKE $${paramIndex})`);
       }
       queryParams.push(`%${params.search}%`);
       countParams.push(`%${params.search}%`);
@@ -210,15 +210,18 @@ export async function getReportData(req, res, next) {
 
     switch (reportType) {
       case 'subject-registration': {
-        // Returns subject demographic and sample count metrics
+        // Returns animal demographic and sample count metrics
         countStr = `
-          SELECT COUNT(DISTINCT s.subject_id) as total 
+          SELECT COUNT(DISTINCT COALESCE(s.animal_id, s.subject_id)) as total 
           FROM samples s
           ${whereClause}
         `;
         queryStr = `
           SELECT 
-            s.subject_id as "subjectId",
+            COALESCE(s.animal_id, s.subject_id) as "subjectId",
+            COALESCE(s.animal_id, s.subject_id) as "animalId",
+            s.species,
+            s.breed,
             s.gender,
             s.age,
             MIN(s.collection_date) as "registrationDate",
@@ -226,7 +229,7 @@ export async function getReportData(req, res, next) {
             s.consent_status as "consentStatus"
           FROM samples s
           ${whereClause}
-          GROUP BY s.subject_id, s.gender, s.age, s.consent_status
+          GROUP BY s.animal_id, s.subject_id, s.species, s.breed, s.gender, s.age, s.consent_status
           ORDER BY "registrationDate" ${params.sortOrder}
           LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
         `;
@@ -238,7 +241,10 @@ export async function getReportData(req, res, next) {
         queryStr = `
           SELECT 
             c.id as "consentId",
-            c.subject_id as "subjectId",
+            COALESCE(c.animal_id, c.subject_id) as "subjectId",
+            COALESCE(c.animal_id, c.subject_id) as "animalId",
+            c.owner_custodian_name as "ownerCustodian",
+            c.ethics_permit_ref as "ethicsPermitRef",
             c.consent_type as "consentType",
             c.consent_version as "consentVersion",
             c.consent_date as "consentDate",
@@ -318,7 +324,10 @@ export async function getReportData(req, res, next) {
         queryStr = `
           SELECT 
             s.id as "sampleId",
+            COALESCE(s.animal_id, s.subject_id) as "animalId",
             s.subject_id as "subjectId",
+            s.species,
+            s.breed,
             s.specimen_type as "specimenType",
             s.sample_volume as "volume",
             s.collection_date as "collectionDate",

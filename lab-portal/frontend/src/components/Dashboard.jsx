@@ -492,7 +492,7 @@ export default function Dashboard({ samples = [], globalTotal, setActiveTab, use
               <thead>
                 <tr>
                   <th>Sample ID</th>
-                  <th>Subject ID</th>
+                  <th>Animal ID</th>
                   <th>Specimen Type</th>
                   <th>Volume</th>
                   <th>Date & Time</th>
@@ -515,7 +515,7 @@ export default function Dashboard({ samples = [], globalTotal, setActiveTab, use
                   return (
                     <tr key={sample.id}>
                       <td style={{ fontFamily: 'monospace', fontWeight: '600' }}>{sample.id}</td>
-                      <td style={{ fontFamily: 'monospace' }}>{sample.subject_id}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{sample.animal_id || sample.subject_id}</td>
                       <td>
                         <span className="badge" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
                           {sample.specimen_type}

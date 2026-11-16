@@ -102,8 +102,8 @@ export default function TraceSpecimen({ backendUrl, token, user, activeLabId, ac
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-              <div><strong>Pseudonymized Subject ID:</strong> {traceData.sample.subject_id}</div>
-              <div><strong>Age & Gender:</strong> {traceData.sample.age} years old, {traceData.sample.gender}</div>
+              <div><strong>Animal ID:</strong> {traceData.sample.animal_id || traceData.sample.subject_id} {traceData.sample.species ? `(${traceData.sample.species}${traceData.sample.breed ? ` - ${traceData.sample.breed}` : ''})` : ''}</div>
+              <div><strong>Sex & Age:</strong> {traceData.sample.sex || traceData.sample.gender}, {traceData.sample.age} years old</div>
               <div><strong>Lab Intake Source:</strong> {traceData.sample.lab_name}</div>
               <div><strong>Extraction Date:</strong> {traceData.sample.collection_date} &bull; {traceData.sample.collection_time}</div>
               <div><strong>Clinical Pathology:</strong> {traceData.sample.diagnosis || 'Healthy Control'}</div>
@@ -164,7 +164,7 @@ export default function TraceSpecimen({ backendUrl, token, user, activeLabId, ac
                   <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{traceData.sample.collection_date}</span>
                 </div>
                 <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
-                  Registered sample {traceData.sample.id} ({traceData.sample.specimen_type}, {traceData.sample.sample_volume} mL) for Subject {traceData.sample.subject_id} at {traceData.sample.lab_name} by intake operator {traceData.sample.collector_name}.
+                  Registered sample {traceData.sample.id} ({traceData.sample.specimen_type}, {traceData.sample.sample_volume} mL) for Animal {traceData.sample.animal_id || traceData.sample.subject_id} at {traceData.sample.lab_name} by intake operator {traceData.sample.collector_name}.
                 </p>
               </div>
 

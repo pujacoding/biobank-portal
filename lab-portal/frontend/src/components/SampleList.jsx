@@ -17,6 +17,7 @@ export default function SampleList({
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [specimenFilter, setSpecimenFilter] = useState('All');
+  const [speciesFilter, setSpeciesFilter] = useState('All');
   const [selectedSampleIds, setSelectedSampleIds] = useState([]);
 
   // Preview Modal States
@@ -53,7 +54,7 @@ export default function SampleList({
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, specimenFilter, collectionDateFilter, customDate, pageSize]);
+  }, [search, statusFilter, specimenFilter, speciesFilter, collectionDateFilter, customDate, pageSize]);
 
   React.useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -75,13 +76,19 @@ export default function SampleList({
 
   // Filter logic
   const filteredSamples = samples.filter(sample => {
+    const targetAnimal = (sample.animal_id || sample.subject_id || '').toLowerCase();
+    const targetSpecies = (sample.species || '').toLowerCase();
+    const targetBreed = (sample.breed || '').toLowerCase();
     const matchesSearch = 
       sample.id.toLowerCase().includes(search.toLowerCase()) ||
-      sample.subject_id.toLowerCase().includes(search.toLowerCase()) ||
+      targetAnimal.includes(search.toLowerCase()) ||
+      targetSpecies.includes(search.toLowerCase()) ||
+      targetBreed.includes(search.toLowerCase()) ||
       (sample.barcode_text && sample.barcode_text.toLowerCase().includes(search.toLowerCase()));
 
     const matchesStatus = statusFilter === 'All' || sample.status === statusFilter;
     const matchesSpecimen = specimenFilter === 'All' || sample.specimen_type === specimenFilter;
+    const matchesSpecies = speciesFilter === 'All' || sample.species === speciesFilter;
 
     let matchesDate = true;
     if (collectionDateFilter === 'Today') {
@@ -90,7 +97,7 @@ export default function SampleList({
       matchesDate = sample.collection_date === customDate;
     }
 
-    return matchesSearch && matchesStatus && matchesSpecimen && matchesDate;
+    return matchesSearch && matchesStatus && matchesSpecimen && matchesSpecies && matchesDate;
   });
 
   const uniqueSpecimenTypes = ['All', ...new Set(samples.map(s => s.specimen_type).filter(Boolean))];
@@ -242,22 +249,23 @@ export default function SampleList({
 
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(11);
-      doc.text("AURA BIOBANK", 6, 10);
+      doc.text("ANIVORA BIOBANK", 6, 10);
 
       doc.setFont("Helvetica", "normal");
       doc.setFontSize(8);
-      doc.text(`Sample ID: ${sample.id}`, 6, 17);
-      doc.text(`Specimen: ${sample.specimen_type} (${sample.sample_volume} mL)`, 6, 23);
-      doc.text(`Collected: ${sample.collection_date}`, 6, 29);
-      doc.text(`Lab: ${sample.lab_name || 'Metropolis Lab'}`, 6, 35);
+      doc.text(`Sample ID: ${sample.id}`, 6, 16);
+      doc.text(`Animal ID: ${sample.animal_id || sample.subject_id} (${sample.species || 'Animal'})`, 6, 21);
+      doc.text(`Specimen: ${sample.specimen_type} (${sample.sample_volume} mL)`, 6, 26);
+      doc.text(`Collected: ${sample.collection_date}`, 6, 31);
+      doc.text(`Lab: ${sample.lab_name || 'ANIVORA Central Biobank'}`, 6, 36);
       doc.setFontSize(6.5);
-      doc.text(`Location: ${sample.lab_location || 'Boston, MA'}`, 6, 41);
+      doc.text(`Facility: ${sample.collection_facility || sample.lab_location || 'Veterinary Hospital'}`, 6, 42);
 
       if (barcode.qr_code_base64) {
         doc.addImage(barcode.qr_code_base64, 'PNG', 46, 8, 28, 28);
       }
 
-      doc.save(`AURA-LABEL-${sample.id}.pdf`);
+      doc.save(`ANIVORA-LABEL-${sample.id}.pdf`);
 
       // Log print action to audit records
       const endpoint = reprint ? '/api/barcode/reprint' : '/api/barcode/print';
@@ -514,6 +522,22 @@ export default function SampleList({
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <div style={{ flex: 1, minWidth: '130px' }}>
+            <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Species</label>
+            <select 
+              className="form-control"
+              value={speciesFilter}
+              onChange={(e) => setSpeciesFilter(e.target.value)}
+            >
+              <option value="All">All Species</option>
+              <option value="Dog">Dog</option>
+              <option value="Cat">Cat</option>
+              <option value="Cattle">Cattle</option>
+              <option value="Horse">Horse</option>
+              <option value="Bird">Bird</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
           <div style={{ flex: 1, minWidth: '140px' }}>
             <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-tertiary)', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Specimen Type</label>
             <select 
@@ -588,7 +612,8 @@ export default function SampleList({
                     />
                   </th>
                   <th>Sample ID</th>
-                  <th>Subject ID</th>
+                  <th>Animal ID</th>
+                  <th>Species / Breed</th>
                   <th>Specimen Type</th>
                   <th>Collection Date</th>
                   <th>Created By</th>
@@ -627,7 +652,27 @@ export default function SampleList({
                           />
                         </td>
                         <td style={{ fontFamily: 'monospace', fontWeight: '700' }}>{sample.id}</td>
-                        <td style={{ fontFamily: 'monospace' }}>{sample.subject_id}</td>
+                        <td style={{ fontFamily: 'monospace' }}>{sample.animal_id || sample.subject_id}</td>
+                        <td>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            background: 'rgba(6, 182, 212, 0.12)',
+                            color: 'var(--accent-cyan)',
+                            fontSize: '11px',
+                            fontWeight: '700'
+                          }}>
+                            🐾 {sample.species || 'Animal'}
+                          </span>
+                          {sample.breed && (
+                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                              {sample.breed}
+                            </div>
+                          )}
+                        </td>
                         <td>
                           <div>{sample.specimen_type} ({sample.sample_volume} mL)</div>
                           {sample.container_type && (
@@ -848,8 +893,9 @@ export default function SampleList({
               }}
             >
               <div style={{ textAlign: 'left', flex: 1 }}>
-                <div style={{ fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', color: '#0f172a' }}>AURA BIOBANK</div>
+                <div style={{ fontSize: '12px', fontWeight: '800', letterSpacing: '0.05em', color: '#0f172a' }}>ANIVORA BIOBANK</div>
                 <div style={{ fontSize: '9px', color: '#475569', marginTop: '4px', fontWeight: '700' }}>ID: {selectedSampleForPreview.id}</div>
+                <div style={{ fontSize: '9px', color: '#475569', fontWeight: '700' }}>Animal: {selectedSampleForPreview.animal_id || selectedSampleForPreview.subject_id} {selectedSampleForPreview.species ? `(${selectedSampleForPreview.species})` : ''}</div>
                 <div style={{ fontSize: '9px', color: '#475569', fontWeight: '600' }}>Type: {selectedSampleForPreview.specimen_type} ({selectedSampleForPreview.sample_volume} mL)</div>
                 <div style={{ fontSize: '9px', color: '#475569', fontWeight: '600' }}>Coll: {selectedSampleForPreview.collection_date}</div>
                 <div style={{ fontSize: '8px', color: '#64748b', fontWeight: '500', marginTop: '2px' }}>Lab: {selectedSampleForPreview.lab_name}</div>

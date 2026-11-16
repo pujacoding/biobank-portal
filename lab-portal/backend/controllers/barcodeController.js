@@ -49,7 +49,7 @@ async function logActivity(client, userId, actionType, moduleName, entityType, e
       WHERE u.id = $1
     `, [userId]);
 
-    const user = performer.rows[0] || { name: "System", role: "Super Admin", lab_name: "Aura Biobank Admin Center" };
+    const user = performer.rows[0] || { name: "System", role: "Super Admin", lab_name: "ANIVORA BioBank Admin Center" };
     const clientIp = headers['x-forwarded-for'] || socket?.remoteAddress || "";
 
     await client.query(`
@@ -57,7 +57,7 @@ async function logActivity(client, userId, actionType, moduleName, entityType, e
         user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     `, [
-      userId, user.name, user.role, user.lab_name || "Aura Biobank Admin Center",
+      userId, user.name, user.role, user.lab_name || "ANIVORA BioBank Admin Center",
       moduleName, actionType, entityType, String(entityId),
       oldVal ? (typeof oldVal === 'string' ? oldVal : JSON.stringify(oldVal)) : null,
       newVal ? (typeof newVal === 'string' ? newVal : JSON.stringify(newVal)) : null,
@@ -231,6 +231,9 @@ export async function getRegistry(req, res, next) {
         b.qr_code_base64,
         b.code128_base64,
         s.subject_id as coded_participant_id,
+        COALESCE(s.animal_id, s.subject_id) as animal_id,
+        s.species,
+        s.breed,
         s.specimen_type,
         s.container_type,
         s.collection_date,
@@ -617,8 +620,8 @@ export async function generateBarcode(req, res, next) {
           INSERT INTO samples (
             id, subject_id, gender, age, specimen_type, specimen_type_id, sample_volume, volume_unit, container_type, container_count,
             collection_date, collection_time, collection_datetime, lab_id, collector_id, consent_id, consent_status,
-            barcode_status, barcode_value, status, parent_sample_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, 'Generated', $17, 'Barcode Generated', $18)
+            barcode_status, barcode_value, status, parent_sample_id, animal_id, species, breed, owner_custodian_id, collection_facility
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, 'Generated', $17, 'Barcode Generated', $18, $19, $20, $21, $22, $23)
           ON CONFLICT (id) DO UPDATE SET barcode_value = EXCLUDED.barcode_value, status = 'Barcode Generated'
         `, [
           aliquotSampleId,
@@ -638,7 +641,12 @@ export async function generateBarcode(req, res, next) {
           sample.consent_id,
           sample.consent_status,
           aliquotBarcodeValue,
-          sample_id
+          sample_id,
+          sample.animal_id || sample.subject_id,
+          sample.species,
+          sample.breed,
+          sample.owner_custodian_id,
+          sample.collection_facility
         ]);
 
         // Insert aliquot barcode record
@@ -789,8 +797,8 @@ export async function generateAliquots(req, res, next) {
         INSERT INTO samples (
           id, subject_id, gender, age, specimen_type, specimen_type_id, sample_volume, volume_unit, container_type, container_count,
           collection_date, collection_time, collection_datetime, lab_id, collector_id, consent_id, consent_status,
-          barcode_status, barcode_value, status, parent_sample_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, 'Generated', $17, 'Barcode Generated', $18)
+          barcode_status, barcode_value, status, parent_sample_id, animal_id, species, breed, owner_custodian_id, collection_facility
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12, $13, $14, $15, $16, 'Generated', $17, 'Barcode Generated', $18, $19, $20, $21, $22, $23)
         ON CONFLICT (id) DO NOTHING
       `, [
         aliqSampleId,
@@ -810,7 +818,12 @@ export async function generateAliquots(req, res, next) {
         parent.consent_id,
         parent.consent_status,
         aliqBarcodeValue,
-        parent_sample_id
+        parent_sample_id,
+        parent.animal_id || parent.subject_id,
+        parent.species,
+        parent.breed,
+        parent.owner_custodian_id,
+        parent.collection_facility
       ]);
 
       // Insert barcode
@@ -905,6 +918,9 @@ export async function getBarcodeDetails(req, res, next) {
         v_u.name as voided_by_name,
         ver_u.name as verified_by_name,
         s.subject_id as coded_participant_id,
+        COALESCE(s.animal_id, s.subject_id) as animal_id,
+        s.species,
+        s.breed,
         s.specimen_type,
         s.sample_volume,
         COALESCE(s.volume_unit, b.volume_unit, 'mL') as volume_unit,
@@ -1199,6 +1215,9 @@ export async function scanAndVerify(req, res, next) {
         b.*,
         s.id as sample_id,
         s.subject_id as coded_participant_id,
+        COALESCE(s.animal_id, s.subject_id) as animal_id,
+        s.species,
+        s.breed,
         s.specimen_type,
         s.sample_volume,
         COALESCE(s.volume_unit, b.volume_unit, 'mL') as volume_unit,

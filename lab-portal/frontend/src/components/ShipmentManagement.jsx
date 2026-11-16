@@ -519,7 +519,7 @@ export default function ShipmentManagement({
                   <option value="">-- Choose eligible sample to transfer --</option>
                   {eligibleSamples.map(s => (
                     <option key={s.id} value={s.id}>
-                      {s.id} - {s.specimen_type || 'Specimen'} ({s.subject_id ? `Subject: ${s.subject_id}` : 'Unassigned'} | Vol: {s.sample_volume || '--'}{s.volume_unit || 'mL'})
+                      {s.id} - {s.specimen_type || 'Specimen'} ({s.animal_id || s.subject_id ? `Animal: ${s.animal_id || s.subject_id}` : 'Unassigned'}{s.species ? ` [${s.species}]` : ''} | Vol: {s.sample_volume || '--'}{s.volume_unit || 'mL'})
                     </option>
                   ))}
                 </select>
@@ -1022,7 +1022,7 @@ export default function ShipmentManagement({
                     Manifest Match Verified
                   </span>
                   <h3 style={{ fontSize: '17px', fontWeight: '800', color: 'var(--text-primary)', margin: '4px 0 0 0', fontFamily: 'monospace' }}>
-                    {scanResult.sample?.id || scanResult.sample?.sample_id} &bull; {scanResult.sample?.specimen_type || 'Plasma'}
+                    {scanResult.sample?.id || scanResult.sample?.sample_id} &bull; {scanResult.sample?.specimen_type || 'Plasma'} {scanResult.sample?.species ? `🐾 ${scanResult.sample.species}` : ''}
                   </h3>
                 </div>
 

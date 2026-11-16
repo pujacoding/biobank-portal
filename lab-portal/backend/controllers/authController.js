@@ -114,7 +114,7 @@ export async function verifyOtp(req, res, next) {
           user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
         ) VALUES ($1, $2, $3, $4, 'Authentication', 'LOGIN', 'User', $5, null, 'User logged in successfully', $6)
       `, [
-        user.id, user.name, user.role, user.lab_name || "Aura Biobank Admin Center",
+        user.id, user.name, user.role, user.lab_name || "ANIVORA BioBank Admin Center",
         String(user.id), clientIp
       ]),
       query(`
@@ -139,7 +139,7 @@ export async function verifyOtp(req, res, next) {
         email: user.email,
         role: user.role,
         lab_id: user.lab_id,
-        lab_name: user.lab_name || "Aura Biobank Admin Center",
+        lab_name: user.lab_name || "ANIVORA BioBank Admin Center",
         lab_location: user.lab_location || "",
         status: user.status,
         permissions: userPermissions
@@ -194,7 +194,7 @@ export async function getProfile(req, res, next) {
         email: user.email,
         role: user.role,
         lab_id: user.lab_id,
-        lab_name: user.lab_name || "Aura Biobank Admin Center",
+        lab_name: user.lab_name || "ANIVORA BioBank Admin Center",
         lab_location: user.lab_location || "",
         status: user.status,
         permissions: userPermissions
@@ -228,7 +228,7 @@ export async function logout(req, res, next) {
           user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
         ) VALUES ($1, $2, $3, $4, 'Authentication', 'LOGOUT', 'User', $5, null, 'User logged out successfully', $6)
       `, [
-        req.user.userId, user.name, user.role, user.lab_name || "Aura Biobank Admin Center", 
+        req.user.userId, user.name, user.role, user.lab_name || "ANIVORA BioBank Admin Center", 
         String(req.user.userId), clientIp
       ]);
     }

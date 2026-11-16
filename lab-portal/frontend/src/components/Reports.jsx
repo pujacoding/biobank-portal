@@ -624,7 +624,7 @@ export default function Reports({ samples, backendUrl, token, user, setActiveTab
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(16);
       doc.setTextColor(0, 242, 254);
-      doc.text("AURA RESEARCH BIOBANK CENTER", 15, 20);
+      doc.text("ANIVORA RESEARCH BIOBANK CENTER", 15, 20);
 
       doc.setFontSize(11);
       doc.setTextColor(255, 255, 255);

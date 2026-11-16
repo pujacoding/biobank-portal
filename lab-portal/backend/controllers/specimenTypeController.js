@@ -51,7 +51,7 @@ export async function createType(req, res, next) {
 
     // Fetch user details for creator name and audit trail
     const userResult = await query("SELECT u.name, r.role_name as role, l.name as lab_name FROM users u LEFT JOIN roles r ON u.role_id = r.role_id LEFT JOIN labs l ON u.lab_id = l.id WHERE u.id = $1", [req.user.userId]);
-    const userRow = userResult.rows[0] || { name: "System Admin", role: "Super Admin", lab_name: "Aura Biobank Admin Center" };
+    const userRow = userResult.rows[0] || { name: "System Admin", role: "Super Admin", lab_name: "ANIVORA BioBank Admin Center" };
 
     // Insert
     await query(
@@ -121,7 +121,7 @@ export async function updateType(req, res, next) {
 
     // Fetch user details for audit trail
     const userResult = await query("SELECT u.name, r.role_name as role, l.name as lab_name FROM users u LEFT JOIN roles r ON u.role_id = r.role_id LEFT JOIN labs l ON u.lab_id = l.id WHERE u.id = $1", [req.user.userId]);
-    const userRow = userResult.rows[0] || { name: "System Admin", role: "Super Admin", lab_name: "Aura Biobank Admin Center" };
+    const userRow = userResult.rows[0] || { name: "System Admin", role: "Super Admin", lab_name: "ANIVORA BioBank Admin Center" };
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "";
 
     const isDeactivated = oldVal.status === 'Active' && finalStatus === 'Inactive';

@@ -673,7 +673,7 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
       };
 
       // Header Page 1
-      printText("AURA BIOBANK", margin, currentY, 18, "bold", [59, 130, 246]);
+      printText("ANIVORA BIOBANK", margin, currentY, 18, "bold", [59, 130, 246]);
       currentY += 8;
 
       printText(`CONSENT TEMPLATE: ${template.consent_name.toUpperCase()}`, margin, currentY, 14, "bold", [31, 41, 55]);
@@ -870,11 +870,11 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
       currentY += 6;
       printText("For any queries or withdrawal:", margin, currentY, 9, "normal");
       currentY += 5;
-      printText("Institution: Aura Biobank Admin Center", margin, currentY, 9, "normal");
+      printText("Institution: ANIVORA BioBank Admin Center", margin, currentY, 9, "normal");
       currentY += 5;
       printText("Contact Number: +1 (555) 019-2838", margin, currentY, 9, "normal");
       currentY += 5;
-      printText("Email: support@aurabiobank.org", margin, currentY, 9, "normal");
+      printText("Email: support@anivorabiobank.org", margin, currentY, 9, "normal");
 
       // Save PDF
       doc.save(`Template_${template.consent_code}_v${template.version}.pdf`);
@@ -1972,7 +1972,7 @@ export default function UserManagement({ backendUrl, token, user: currentUser, s
                   rows="2"
                   value={templatePurpose} 
                   onChange={(e) => setTemplatePurpose(e.target.value)} 
-                  placeholder="e.g. Authorizes storage of biological samples in the AURA Biobank."
+                  placeholder="e.g. Authorizes storage of biological samples in the ANIVORA BioBank."
                   style={{ resize: 'vertical' }}
                 />
               </div>

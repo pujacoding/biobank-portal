@@ -1,5 +1,5 @@
 // ==========================================
-// AURA BIOBANK PORTAL CORE INTELLIGENCE (JS)
+// ANIVORA BIOBANK PORTAL CORE INTELLIGENCE (JS)
 // ==========================================
 import { db, cloudMode, dbMode } from './db.js';
 
@@ -1847,7 +1847,7 @@ function showWellDetails(wellId, specimen) {
 function initConsentManager() {
   const donorSelect = document.getElementById('consent-donor-select');
   if (!donorSelect) {
-    console.warn("AURA Portal: Consent donor select element not found. Skipping initConsentManager.");
+    console.warn("ANIVORA Portal: Consent donor select element not found. Skipping initConsentManager.");
     return;
   }
   const chkAcademic = document.getElementById('consent-academic');
@@ -2316,7 +2316,7 @@ function generateConsentCertificateHTML(donor) {
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 40px; border: 2px solid #334155; border-radius: 12px; max-width: 800px; margin: 0 auto; color: #1e293b; background: #ffffff;">
       <div style="text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 25px;">
-        <h2 style="margin: 0; font-size: 24px; color: #0f172a; font-weight: 800; letter-spacing: -0.025em; text-transform: uppercase;">AURA Biomedical Repository</h2>
+        <h2 style="margin: 0; font-size: 24px; color: #0f172a; font-weight: 800; letter-spacing: -0.025em; text-transform: uppercase;">ANIVORA Veterinary BioBank Repository</h2>
         <h3 style="margin: 5px 0 0 0; font-size: 14px; color: #64748b; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;">Certificate of Informed Legal Consent</h3>
         <p style="margin: 10px 0 0 0; font-size: 11px; color: #94a3b8;">ISO 20387 Biobank Governance | HIPAA Security Compliant | GDPR Right of Autonomy Enforced</p>
       </div>
@@ -2417,12 +2417,12 @@ function generateConsentCertificateHTML(donor) {
           <div style="font-family: 'Georgia', 'Times New Roman', cursive; font-size: 24px; font-style: italic; color: #0f172a; border-bottom: 1px solid #0f172a; padding: 4px 8px 8px 8px; min-height: 32px;">
             ${donor.eSignature || 'N/A'}
           </div>
-          <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Digitally signed on AURA Blockchain Ledger | Verified Document</div>
+          <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Digitally signed on ANIVORA Blockchain Ledger | Verified Document</div>
         </div>
         <div style="text-align: right;">
           <div style="font-size: 10px; color: #64748b;">LIMS Verification Code</div>
           <div style="font-family: monospace; font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 4px; letter-spacing: 0.05em;">
-            ${donor.donorId.replace('SUBJ-', 'AURA-')}-${donor.consentExpiry ? donor.consentExpiry.replace(/-/g, '') : 'NONE'}
+            ${donor.donorId.replace('SUBJ-', 'ANV-')}-${donor.consentExpiry ? donor.consentExpiry.replace(/-/g, '') : 'NONE'}
           </div>
           <div style="font-size: 9px; color: #94a3b8; margin-top: 4px;">Compiled Date: ${today}</div>
         </div>
@@ -2463,7 +2463,7 @@ function downloadConsentHTML(donor) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `AURA-Consent-Certificate-${donor.donorId}.html`;
+  a.download = `ANIVORA-Consent-Certificate-${donor.donorId}.html`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -3639,16 +3639,16 @@ function initReports() {
       let title = "";
       let description = "";
       if (reportType === 'specimens') {
-        title = "AURA Biobank - Specimens Catalog Registry Report";
+        title = "ANIVORA BioBank - Specimens Catalog Registry Report";
         description = "Cryogenic biobank specimen inventory registry and consent states.";
       } else if (reportType === 'donors') {
-        title = "AURA Biobank - Patient Registry & Diagnoses Report";
+        title = "ANIVORA BioBank - Patient Registry & Diagnoses Report";
         description = "Donor registry tracking clinical profiles and authorized usage policies.";
       } else if (reportType === 'requests') {
-        title = "AURA Biobank - LIMS Access Request History Report";
+        title = "ANIVORA BioBank - LIMS Access Request History Report";
         description = "Official record of verified research specimen access clearances.";
       } else if (reportType === 'blockchain') {
-        title = "AURA Biobank - Blockchain Consent Ledger Report";
+        title = "ANIVORA BioBank - Blockchain Consent Ledger Report";
         description = "Immutable transaction ledger tracking individual participant consent changes.";
       }
       

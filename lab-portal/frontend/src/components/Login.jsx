@@ -84,26 +84,25 @@ export default function Login({ onLoginSuccess, backendUrl }) {
       background: 'radial-gradient(circle at center, hsl(222, 25%, 15%) 0%, var(--bg-primary) 100%)'
     }}>
       <div className="glass-card" style={{ width: '100%', maxWidth: '420px', textAlign: 'center' }}>
-        <div style={{ marginBottom: '28px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <div style={{
-            background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-cyan))',
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '12px',
-            boxShadow: '0 0 16px rgba(0, 242, 254, 0.3)'
-          }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: '22px', height: '22px' }}>
-              <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2z"/>
-              <path d="M12 6a6 6 0 0 1 6 6c0 3.314-2.686 6-6 6s-6-2.686-6-6a6 6 0 0 1 6-6z"/>
-              <circle cx="12" cy="12" r="2" fill="white"/>
-            </svg>
-          </div>
-          <h2 style={{ fontSize: '24px', fontWeight: '700', letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>AURA LAB PORTAL</h2>
-          <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: '700', letterSpacing: '0.1em', marginTop: '2px' }}>EXTERNAL BIOBANK INGESTION</span>
+        <div style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <img 
+            src="/anivora-logo.jpg" 
+            alt="ANIVORA BioBank" 
+            style={{ 
+              maxWidth: '220px', 
+              height: 'auto', 
+              maxHeight: '90px', 
+              borderRadius: '8px', 
+              marginBottom: '14px',
+              backgroundColor: '#fff',
+              padding: '6px 12px',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)'
+            }} 
+          />
+          <h2 style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>ANIVORA BioBank</h2>
+          <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: '700', letterSpacing: '0.08em', marginTop: '4px' }}>
+            VETERINARY BIOSPECIMEN MANAGEMENT & RESEARCH PLATFORM
+          </span>
         </div>
 
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '24px', lineHeight: '1.4' }}>
