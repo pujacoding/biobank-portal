@@ -14,7 +14,7 @@ async function logActivity(client, userId, actionType, moduleName, entityType, e
     WHERE u.id = $1
   `, [userId]);
 
-  const user = performer.rows[0] || { name: "System", role: "Super Admin", lab_name: "Aura Biobank Admin Center" };
+  const user = performer.rows[0] || { name: "System", role: "Super Admin", lab_name: "ANIVORA BioBank Admin Center" };
   const clientIp = headers['x-forwarded-for'] || socket.remoteAddress || "";
 
   await client.query(`
@@ -22,7 +22,7 @@ async function logActivity(client, userId, actionType, moduleName, entityType, e
       user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
   `, [
-    userId, user.name, user.role, user.lab_name || "Aura Biobank Admin Center",
+    userId, user.name, user.role, user.lab_name || "ANIVORA BioBank Admin Center",
     moduleName, actionType, entityType, String(entityId),
     oldVal ? JSON.stringify(oldVal) : null,
     newVal ? JSON.stringify(newVal) : null,

@@ -56,7 +56,7 @@ export default function PublicSpecimenTracker({ sampleId, backendUrl }) {
             </svg>
           </div>
           <div>
-            <h2 style={{ fontSize: '18px', fontWeight: '800', letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>AURA VERIFICATION</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: '800', letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>ANIVORA VERIFICATION</h2>
             <span style={{ fontSize: '10px', color: 'var(--accent-cyan)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Specimen Tracking Gateway</span>
           </div>
         </div>
@@ -140,7 +140,7 @@ export default function PublicSpecimenTracker({ sampleId, backendUrl }) {
 
         {/* Footer info disclaimer */}
         <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '11px', color: 'var(--text-tertiary)', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-          This verification check provides real-time digital lookup for biobank specimens. Confidentially secured by AURA portal compliance rules.
+          This verification check provides real-time digital lookup for biobank specimens. Confidentially secured by ANIVORA BioBank compliance rules.
         </div>
       </div>
       

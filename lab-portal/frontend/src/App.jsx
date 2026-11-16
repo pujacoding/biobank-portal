@@ -328,42 +328,38 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: sidebarCollapsed ? 'center' : 'space-between', gap: '10px', textAlign: 'left' }}>
             {!sidebarCollapsed ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{
-                  background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-cyan))',
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 0 12px rgba(0, 242, 254, 0.2)'
-                }}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: '18px', height: '18px' }}>
-                    <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2z"/>
-                    <circle cx="12" cy="12" r="2" fill="white"/>
-                  </svg>
-                </div>
+                <img 
+                  src="/anivora-logo.jpg" 
+                  alt="ANIVORA BioBank" 
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    objectFit: 'contain',
+                    background: '#fff',
+                    padding: '2px',
+                    boxShadow: '0 0 12px rgba(0, 128, 128, 0.25)'
+                  }} 
+                />
                 <div>
-                  <h2 style={{ fontSize: '15px', fontWeight: '800', letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>AURA PORTAL</h2>
-                  <span style={{ fontSize: '9px', color: 'var(--text-tertiary)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Lab Intake</span>
+                  <h2 style={{ fontSize: '15px', fontWeight: '800', letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>ANIVORA BioBank</h2>
+                  <span style={{ fontSize: '9px', color: 'var(--text-tertiary)', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Veterinary BioBank</span>
                 </div>
               </div>
             ) : (
-              <div style={{
-                background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-cyan))',
-                width: '36px',
-                height: '36px',
-                borderRadius: '8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 0 12px rgba(0, 242, 254, 0.2)'
-              }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" style={{ width: '18px', height: '18px' }}>
-                  <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2z"/>
-                  <circle cx="12" cy="12" r="2" fill="white"/>
-                </svg>
-              </div>
+              <img 
+                src="/anivora-logo.jpg" 
+                alt="ANIVORA BioBank" 
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  objectFit: 'contain',
+                  background: '#fff',
+                  padding: '2px',
+                  boxShadow: '0 0 12px rgba(0, 128, 128, 0.25)'
+                }} 
+              />
             )}
 
             <button

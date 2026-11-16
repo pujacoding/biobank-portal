@@ -769,6 +769,9 @@ export async function getShipments(req, res, next) {
              ss.verified_at, ss.notes as sample_notes,
              s.specimen_type, s.sample_volume, s.volume_unit, s.location, s.status as current_sample_status,
              s.lab_id as current_lab_id,
+             COALESCE(s.animal_id, s.subject_id) as animal_id,
+             s.species,
+             s.breed,
              b.barcode_value
       FROM shipment_samples ss
       JOIN samples s ON ss.sample_id = s.id
@@ -960,6 +963,9 @@ export async function verifyTransferScan(req, res, next) {
       SELECT ss.*, 
              s.id as sample_id, s.specimen_type, s.sample_volume, s.volume_unit, s.status as sample_status,
              s.collection_date, s.collection_time, s.subject_id,
+             COALESCE(s.animal_id, s.subject_id) as animal_id,
+             s.species,
+             s.breed,
              b.barcode_value,
              shp.id as transfer_id, shp.status as shipment_status, shp.destination, shp.destination_lab_id,
              shp.origin_lab_id, shp.dispatched_by, shp.temperature, shp.notes as shipment_notes,
@@ -1004,6 +1010,9 @@ export async function verifyTransferScan(req, res, next) {
         volume_unit: row.volume_unit,
         status: row.sample_status,
         subject_id: row.subject_id,
+        animal_id: row.animal_id || row.subject_id,
+        species: row.species,
+        breed: row.breed,
         barcode_value: row.barcode_value
       },
       shipment: {

@@ -58,7 +58,7 @@ export async function createTemplate(req, res, next) {
     await query(`
       INSERT INTO user_activity_logs (
         user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
-      ) VALUES ($1, $2, $3, 'Aura Biobank Admin Center', 'Consent Management', 'CREATE', 'Consent Template', $4, null, $5, $6)
+      ) VALUES ($1, $2, $3, 'ANIVORA BioBank Admin Center', 'Consent Management', 'CREATE', 'Consent Template', $4, null, $5, $6)
     `, [
       req.user.userId, req.user.name || "Super Admin", req.user.role,
       String(newId), `Created consent template ${name} (${code}) version ${version}.`,
@@ -106,7 +106,7 @@ export async function updateTemplate(req, res, next) {
     await query(`
       INSERT INTO user_activity_logs (
         user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
-      ) VALUES ($1, $2, $3, 'Aura Biobank Admin Center', 'Consent Management', 'UPDATE', 'Consent Template', $4, $5, $6, $7)
+      ) VALUES ($1, $2, $3, 'ANIVORA BioBank Admin Center', 'Consent Management', 'UPDATE', 'Consent Template', $4, $5, $6, $7)
     `, [
       req.user.userId, req.user.name || "Super Admin", req.user.role,
       String(id), JSON.stringify(oldVal), `Updated consent template ${name} (${code}) version ${version}.`,
@@ -125,7 +125,17 @@ export async function updateTemplate(req, res, next) {
 export async function submitConsent(req, res, next) {
   const client = await getClient();
   try {
-    const { sample_id, consent_version, consent_date, document_name, status } = req.body;
+    const { 
+      sample_id, 
+      consent_version, 
+      consent_date, 
+      document_name, 
+      status,
+      animal_id,
+      owner_custodian_name,
+      ethics_permit_ref,
+      authorization_type
+    } = req.body;
 
     if (!sample_id || !consent_version || !consent_date || !document_name) {
       return res.status(400).json({ error: "Missing required fields for consent submission" });
@@ -144,6 +154,10 @@ export async function submitConsent(req, res, next) {
     }
 
     const sample = sampleCheck.rows[0];
+    const targetAnimalId = animal_id || sample.animal_id || sample.subject_id;
+    const targetOwnerCustodian = owner_custodian_name || sample.owner_custodian_id || null;
+    const targetEthicsPermit = ethics_permit_ref || null;
+    const targetAuthType = authorization_type || 'Owner / Custodian Authorization';
 
     // Check if sample already has verified consent
     let isUpdatingDraft = false;
@@ -204,9 +218,10 @@ export async function submitConsent(req, res, next) {
       // Update existing draft consent
       await client.query(
         `UPDATE consent 
-         SET consent_version = $1, consent_date = $2, document_url = $3, submitted_by = $4, submitted_date = $5, consent_type = $6, verification_status = $7
-         WHERE id = $8`,
-        [consent_version, consent_date, mockDocumentUrl, userRow.name, submittedDate, consentType, finalStatus, consent_id]
+         SET consent_version = $1, consent_date = $2, document_url = $3, submitted_by = $4, submitted_date = $5, consent_type = $6, verification_status = $7,
+             animal_id = $8, owner_custodian_name = $9, ethics_permit_ref = $10, authorization_type = $11
+         WHERE id = $12`,
+        [consent_version, consent_date, mockDocumentUrl, userRow.name, submittedDate, consentType, finalStatus, targetAnimalId, targetOwnerCustodian, targetEthicsPermit, targetAuthType, consent_id]
       );
       
       // Update samples table
@@ -221,16 +236,16 @@ export async function submitConsent(req, res, next) {
           user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
         ) VALUES ($1, $2, $3, $4, 'Consent Management', 'UPDATE', 'Consent', $5, null, $6, $7)
       `, [
-        req.user.userId, userRow.name, userRow.role, userRow.lab_name || "Aura Biobank Admin Center", consent_id,
+        req.user.userId, userRow.name, userRow.role, userRow.lab_name || "ANIVORA BioBank Admin Center", consent_id,
         `Updated draft consent ${consent_id} (status: ${finalStatus}, type: ${consentType}) for sample ${sample_id}.`,
         clientIp
       ]);
     } else {
       // Create consent record
       await client.query(
-        `INSERT INTO consent (id, subject_id, consent_version, consent_date, document_url, verification_status, submitted_by, submitted_date, consent_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [consent_id, sample.subject_id, consent_version, consent_date, mockDocumentUrl, finalStatus, userRow.name, submittedDate, consentType]
+        `INSERT INTO consent (id, subject_id, consent_version, consent_date, document_url, verification_status, submitted_by, submitted_date, consent_type, animal_id, owner_custodian_name, ethics_permit_ref, authorization_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [consent_id, targetAnimalId, consent_version, consent_date, mockDocumentUrl, finalStatus, userRow.name, submittedDate, consentType, targetAnimalId, targetOwnerCustodian, targetEthicsPermit, targetAuthType]
       );
 
       // Link consent to sample and transition consent_status to finalStatus
@@ -245,7 +260,7 @@ export async function submitConsent(req, res, next) {
           user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
         ) VALUES ($1, $2, $3, $4, 'Consent Management', 'CREATE', 'Consent', $5, null, $6, $7)
       `, [
-        req.user.userId, userRow.name, userRow.role, userRow.lab_name || "Aura Biobank Admin Center", consent_id,
+        req.user.userId, userRow.name, userRow.role, userRow.lab_name || "ANIVORA BioBank Admin Center", consent_id,
         `Created consent ${consent_id} (status: ${finalStatus}, type: ${consentType}) for sample ${sample_id}.`,
         clientIp
       ]);
@@ -260,7 +275,11 @@ export async function submitConsent(req, res, next) {
         : "Consent document submitted successfully. QR/Barcode generation is locked until consent verification.",
       consent: {
         id: consent_id,
-        subject_id: sample.subject_id,
+        subject_id: targetAnimalId,
+        animal_id: targetAnimalId,
+        owner_custodian_name: targetOwnerCustodian,
+        ethics_permit_ref: targetEthicsPermit,
+        authorization_type: targetAuthType,
         consent_version,
         consent_date,
         document_url: mockDocumentUrl,
@@ -338,7 +357,7 @@ export async function transitionConsent(req, res, next) {
       INSERT INTO user_activity_logs (
         user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
       ) VALUES ($1, $2, $3, $4, 'Consent Management', 'UPDATE', 'Consent', $5, 'Draft', 'Submitted', $6)
-    `, [req.user.userId, userRow.name, userRow.role, userRow.lab_name || "Aura Biobank Admin Center", consent_id, clientIp]);
+    `, [req.user.userId, userRow.name, userRow.role, userRow.lab_name || "ANIVORA BioBank Admin Center", consent_id, clientIp]);
 
     await client.query('COMMIT');
 
@@ -442,7 +461,7 @@ export async function verifyConsent(req, res, next) {
         user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
       ) VALUES ($1, $2, $3, $4, 'Consent Management', $5, 'Consent', $6, $7, $8, $9)
     `, [
-      req.user.userId, userRow.name, userRow.role, userRow.lab_name || "Aura Biobank Admin Center", 
+      req.user.userId, userRow.name, userRow.role, userRow.lab_name || "ANIVORA BioBank Admin Center", 
       actionType, consent_id, JSON.stringify(oldConsent), JSON.stringify({ ...oldConsent, verification_status }),
       clientIp
     ]);
@@ -564,7 +583,7 @@ export async function withdrawConsent(req, res, next) {
         user_id, user_name, role, lab_name, module_name, action_type, entity_type, entity_id, old_value, new_value, ip_address
       ) VALUES ($1, $2, $3, $4, 'Consent Management', 'UPDATE', 'Consent', $5, $6, $7, $8)
     `, [
-      req.user.userId, userRow.name, userRow.role, userRow.lab_name || "Aura Biobank Admin Center", sample.consent_id,
+      req.user.userId, userRow.name, userRow.role, userRow.lab_name || "ANIVORA BioBank Admin Center", sample.consent_id,
       `Consent status updated to Withdrawn (withdrawn_by: ${withdrawnByName}, withdrawn_at: ${withdrawnAt})`,
       logMsg,
       clientIp

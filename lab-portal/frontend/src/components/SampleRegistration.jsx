@@ -2,9 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 
 export default function SampleRegistration({ user, backendUrl, token, onRegistrationSuccess, setActiveTab, setPreSelectedSampleId, activeLabId, activeLabName }) {
   // Form States
-  const [gender, setGender] = useState('');
+  const [gender, setGender] = useState('Male');
   const [age, setAge] = useState('');
-  const [subjectId, setSubjectId] = useState(() => 'SUBJ-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+  const [species, setSpecies] = useState('Dog');
+  const [breed, setBreed] = useState('');
+  const [animalId, setAnimalId] = useState(() => 'ANV-VET-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+  const [subjectId, setSubjectId] = useState(animalId);
+  const [isExistingAnimal, setIsExistingAnimal] = useState(false);
+  const [existingAnimals, setExistingAnimals] = useState([]);
+  const [selectedExistingId, setSelectedExistingId] = useState('');
+  const [ownerCustodianId, setOwnerCustodianId] = useState('');
+  const [veterinaryDiagnosis, setVeterinaryDiagnosis] = useState('Healthy Control');
+  const [collectionFacility, setCollectionFacility] = useState(activeLabName || '');
   
   // Specimen Type Master States
   const [specimenTypes, setSpecimenTypes] = useState([]);
@@ -180,6 +189,41 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Fetch registered animals for veterinary selection
+  useEffect(() => {
+    const fetchAnimals = async () => {
+      try {
+        const res = await fetch(`${backendUrl}/api/samples/animals`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setExistingAnimals(data.animals || []);
+        }
+      } catch (err) {
+        console.error("Error loading animals:", err);
+      }
+    };
+    fetchAnimals();
+  }, [backendUrl, token]);
+
+  const handleSelectExistingAnimal = (selectedId) => {
+    setSelectedExistingId(selectedId);
+    if (!selectedId) return;
+    const found = existingAnimals.find(a => a.animal_id === selectedId);
+    if (found) {
+      setAnimalId(found.animal_id);
+      setSubjectId(found.animal_id);
+      if (found.species) setSpecies(found.species);
+      if (found.breed) setBreed(found.breed);
+      if (found.sex) setGender(found.sex);
+      if (found.age !== null && found.age !== undefined) setAge(String(found.age));
+      if (found.owner_custodian_id) setOwnerCustodianId(found.owner_custodian_id);
+      if (found.veterinary_diagnosis) setVeterinaryDiagnosis(found.veterinary_diagnosis);
+      if (found.collection_facility) setCollectionFacility(found.collection_facility);
+    }
+  };
+
 
 
   const selectedTemplateId = selectedTemplateIds[0] || '';
@@ -225,7 +269,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
           doc.setFont("Helvetica", "italic");
           doc.setFontSize(8);
           doc.setTextColor(150, 150, 150);
-          doc.text("AURA Biobank Consent Document", margin, currentY);
+          doc.text("ANIVORA BioBank Authorization Document", margin, currentY);
           doc.line(margin, currentY + 2, margin + printableWidth, currentY + 2);
           currentY += 8;
         }
@@ -234,14 +278,14 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       // Draw Header Page 1
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(18);
-      doc.setTextColor(6, 182, 212); // Brand color (Aura cyan)
-      doc.text("AURA BIOBANK", margin, currentY);
+      doc.setTextColor(6, 182, 212); // Brand color (Teal/Cyan)
+      doc.text("ANIVORA BIOBANK", margin, currentY);
       currentY += 8;
 
       doc.setFont("Helvetica", "bold");
       doc.setFontSize(14);
       doc.setTextColor(31, 41, 55);
-      doc.text("PARTICIPANT CONSENT AGREEMENT RECORD", margin, currentY);
+      doc.text("VETERINARY CUSTODIAN AUTHORIZATION RECORD", margin, currentY);
       currentY += 5;
 
       // Draw separator line
@@ -437,8 +481,8 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
     setSuccessMsg('');
 
     // Field checks
-    if (!gender || !age || selectedSpecimenIds.length === 0) {
-      setError("Please complete all required subject and specimen characteristics.");
+    if (!gender || !age || !species || selectedSpecimenIds.length === 0) {
+      setError("Please complete all required animal and specimen characteristics.");
       return;
     }
 
@@ -524,9 +568,16 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
             ...(activeLabId ? { 'x-active-lab-id': activeLabId } : {})
           },
           body: JSON.stringify({
-            subject_id: subjectId,
+            subject_id: animalId || subjectId,
+            animal_id: animalId || subjectId,
+            species,
+            breed,
+            sex: gender,
             gender,
             age,
+            owner_custodian_id: ownerCustodianId,
+            veterinary_diagnosis: veterinaryDiagnosis,
+            collection_facility: collectionFacility || activeLabName,
             specimen_type_id: parseInt(specId, 10),
             specimen_type: finalSpecimenType,
             sample_volume: parseFloat(detail.volume),
@@ -646,7 +697,7 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
   };
 
   const SECTIONS = [
-    { key: 'A', label: 'Subject Info', icon: '👤' },
+    { key: 'A', label: 'Animal Info', icon: '🐾' },
     { key: 'B', label: 'Specimen Info', icon: '🧪' },
     { key: 'C', label: 'Collection Info', icon: '🏥' },
   ];
@@ -663,9 +714,9 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
       </button>
 
       <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '26px', fontWeight: '700' }}>Register Biospecimen</h1>
+        <h1 style={{ fontSize: '26px', fontWeight: '700' }}>Register Veterinary Biospecimen</h1>
         <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-          Ingest new biological samples into the biobank repository. Required parameters are marked with an asterisk (*).
+          Ingest new animal biological samples into ANIVORA BioBank. Required parameters are marked with an asterisk (*).
         </p>
       </div>
 
@@ -850,55 +901,175 @@ export default function SampleRegistration({ user, backendUrl, token, onRegistra
         )}
 
         <fieldset disabled={!activeLabId} style={{ border: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Section A: Subject Information */}
+          {/* Section A: Animal Information */}
         <fieldset ref={sectionRefs.A} style={{ border: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-cyan)', marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Section A: Subject Information
-          </legend>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <legend style={{ fontSize: '15px', fontWeight: '700', color: 'var(--accent-cyan)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Section A: Animal Information (Veterinary Subject)
+            </legend>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsExistingAnimal(false);
+                  setSelectedExistingId('');
+                  const newId = 'ANV-VET-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+                  setAnimalId(newId);
+                  setSubjectId(newId);
+                }}
+                className={`btn ${!isExistingAnimal ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '4px 10px', fontSize: '11px' }}
+              >
+                + New Animal
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsExistingAnimal(true)}
+                className={`btn ${isExistingAnimal ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '4px 10px', fontSize: '11px' }}
+              >
+                📋 Existing Animal ({existingAnimals.length})
+              </button>
+            </div>
+          </div>
+
+          {isExistingAnimal && (
+            <div className="form-group" style={{ marginBottom: '8px', background: 'rgba(6, 182, 212, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+              <label htmlFor="select-existing-animal" style={{ fontWeight: '700', color: 'var(--accent-cyan)' }}>
+                Select Registered Animal *
+              </label>
+              <select
+                id="select-existing-animal"
+                className="form-control"
+                value={selectedExistingId}
+                onChange={(e) => handleSelectExistingAnimal(e.target.value)}
+              >
+                <option value="">-- Choose an already registered animal --</option>
+                {existingAnimals.map(a => (
+                  <option key={a.animal_id} value={a.animal_id}>
+                    {a.animal_id} &bull; {a.species} {a.breed ? `(${a.breed})` : ''} &bull; {a.sex || 'Unknown'} &bull; Owner: {a.owner_custodian_id || 'N/A'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '18px' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Subject ID (Auto Generated)</label>
+              <label>Animal ID (Microchip / Unique Tag) *</label>
               <input
                 type="text"
                 className="form-control"
-                disabled
-                value={subjectId}
+                required
+                value={animalId}
+                onChange={(e) => {
+                  setAnimalId(e.target.value);
+                  setSubjectId(e.target.value);
+                }}
                 style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}
               />
             </div>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="subject-gender">Gender *</label>
+              <label htmlFor="animal-species">Species *</label>
               <select
-                id="subject-gender"
+                id="animal-species"
+                className="form-control"
+                required
+                value={species}
+                onChange={(e) => setSpecies(e.target.value)}
+              >
+                <option value="Dog">Dog (Canine)</option>
+                <option value="Cat">Cat (Feline)</option>
+                <option value="Cattle">Cattle (Bovine)</option>
+                <option value="Horse">Horse (Equine)</option>
+                <option value="Bird">Bird (Avian)</option>
+                <option value="Other">Other Species</option>
+              </select>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="animal-breed">Breed</label>
+              <input
+                type="text"
+                id="animal-breed"
+                className="form-control"
+                placeholder="e.g. Golden Retriever, Holstein"
+                value={breed}
+                onChange={(e) => setBreed(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '18px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="animal-sex">Sex / Reproductive Status *</label>
+              <select
+                id="animal-sex"
                 className="form-control"
                 required
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
               >
-                <option value="">Select Gender</option>
-                <option value="Female">Female</option>
-                <option value="Male">Male</option>
-                <option value="Other">Other</option>
+                <option value="Male">Male (Intact)</option>
+                <option value="Female">Female (Intact)</option>
+                <option value="Neutered Male">Neutered Male (Castrated)</option>
+                <option value="Spayed Female">Spayed Female</option>
+                <option value="Unknown">Unknown</option>
               </select>
-              <div className="invalid-feedback">Gender selection is required.</div>
             </div>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="subject-age">Age *</label>
+              <label htmlFor="animal-age">Age (Years) *</label>
               <input
                 type="number"
-                id="subject-age"
+                id="animal-age"
                 className="form-control"
                 required
                 min={0}
                 max={120}
-                placeholder="Enter subject age"
+                placeholder="Age in years"
                 value={age}
                 onChange={(e) => setAge(e.target.value)}
               />
-              <div className="invalid-feedback">Valid age between 0 and 120 is required.</div>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="animal-owner">Owner / Custodian ID or Name</label>
+              <input
+                type="text"
+                id="animal-owner"
+                className="form-control"
+                placeholder="e.g. CUST-8821 / Jane Doe"
+                value={ownerCustodianId}
+                onChange={(e) => setOwnerCustodianId(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="animal-diagnosis">Veterinary Diagnosis / Clinical Indication</label>
+              <input
+                type="text"
+                id="animal-diagnosis"
+                className="form-control"
+                placeholder="e.g. Healthy Control, Canine Parvovirus, Mastitis"
+                value={veterinaryDiagnosis}
+                onChange={(e) => setVeterinaryDiagnosis(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="animal-facility">Collection Facility / Veterinary Hospital</label>
+              <input
+                type="text"
+                id="animal-facility"
+                className="form-control"
+                placeholder="e.g. Central Veterinary Hospital"
+                value={collectionFacility}
+                onChange={(e) => setCollectionFacility(e.target.value)}
+              />
             </div>
           </div>
 

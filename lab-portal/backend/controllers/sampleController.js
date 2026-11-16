@@ -1,6 +1,6 @@
 import { query } from '../services/dbService.js';
 
-const generateSubjectId = () => 'SUBJ-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+const generateSubjectId = () => 'ANV-VET-' + Math.random().toString(36).substring(2, 8).toUpperCase();
 
 /**
  * Register a new specimen sample
@@ -8,7 +8,12 @@ const generateSubjectId = () => 'SUBJ-' + Math.random().toString(36).substring(2
 export async function registerSample(req, res, next) {
   try {
     console.log("req.body in registerSample:", req.body);
-    let { gender, age, specimen_type_id, specimen_type, sample_volume, consent_template_id, consent_template_ids, container_type, container_count } = req.body;
+    let { 
+      gender, sex, age, date_of_birth,
+      animal_id, species, breed, owner_custodian_id, veterinary_diagnosis, collection_facility,
+      specimen_type_id, specimen_type, sample_volume, consent_template_id, consent_template_ids, 
+      container_type, container_count, subject_id: inputSubjectId, diagnosis 
+    } = req.body;
 
     // Resolve specimen_type_id if missing but specimen_type is present
     if (!specimen_type_id && specimen_type) {
@@ -26,8 +31,15 @@ export async function registerSample(req, res, next) {
       }
     }
 
-    if (!gender || !age || !specimen_type_id || !specimen_type || !sample_volume) {
-      return res.status(400).json({ error: "Missing required fields for subject or specimen information" });
+    const currentYear = new Date().getFullYear();
+    const finalSex = sex || gender || 'Unknown';
+    const finalSpecies = species || 'Dog';
+    const finalBreed = breed || '';
+    const finalAnimalId = (animal_id || inputSubjectId || '').trim() || `ANV-VET-${currentYear}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const finalDiagnosis = veterinary_diagnosis || diagnosis || 'Healthy Control';
+
+    if (!finalSex || !specimen_type_id || !specimen_type || !sample_volume) {
+      return res.status(400).json({ error: "Missing required fields for animal or specimen information" });
     }
 
     let selectedIds = [];
@@ -48,7 +60,7 @@ export async function registerSample(req, res, next) {
     }
 
     const firstTemplateId = parseInt(selectedIds[0], 10);
-    const numericAge = parseInt(age, 10);
+    const numericAge = (age !== undefined && age !== null && age !== '') ? parseInt(age, 10) : 0;
     const numericVolume = parseFloat(sample_volume);
 
     if (isNaN(numericAge) || numericAge < 0 || numericAge > 120) {
@@ -92,7 +104,7 @@ export async function registerSample(req, res, next) {
     }
     const consent_version = templateResult.rows[0].version;
 
-    const subject_id = req.body.subject_id || generateSubjectId();
+    const subject_id = finalAnimalId;
     
     const now = new Date();
     const localDate = now.toLocaleDateString('en-CA'); 
@@ -103,24 +115,44 @@ export async function registerSample(req, res, next) {
     const collectorName = userRow.name;
     const collectorRole = userRow.role;
 
-    const labName = labNameRes.rows[0]?.name || "Aura Biobank Admin Center";
+    const labName = labNameRes.rows[0]?.name || "ANIVORA BioBank Central Laboratory";
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "";
 
     const finalContainerType = container_type || 'Tube';
     const finalContainerCount = container_count ? parseInt(container_count, 10) : 1;
 
+    // 1. Ensure animal record is persisted/upserted in animals table
+    await query(`
+      INSERT INTO animals (
+        animal_id, species, breed, sex, age, date_of_birth, owner_custodian_id, veterinary_diagnosis, collection_facility, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+      ON CONFLICT (animal_id) DO UPDATE SET
+        species = EXCLUDED.species,
+        breed = COALESCE(NULLIF(EXCLUDED.breed, ''), animals.breed),
+        sex = EXCLUDED.sex,
+        age = COALESCE(EXCLUDED.age, animals.age),
+        date_of_birth = COALESCE(EXCLUDED.date_of_birth, animals.date_of_birth),
+        owner_custodian_id = COALESCE(EXCLUDED.owner_custodian_id, animals.owner_custodian_id),
+        veterinary_diagnosis = COALESCE(EXCLUDED.veterinary_diagnosis, animals.veterinary_diagnosis),
+        collection_facility = COALESCE(EXCLUDED.collection_facility, animals.collection_facility),
+        updated_at = CURRENT_TIMESTAMP
+    `, [
+      finalAnimalId, finalSpecies, finalBreed, finalSex,
+      numericAge, date_of_birth || null, owner_custodian_id || null,
+      finalDiagnosis, collection_facility || labName
+    ]);
+
     let sample_id;
     let insertSuccess = false;
     let attempts = 0;
-    const currentYear = new Date().getFullYear();
 
     while (!insertSuccess && attempts < 10) {
       attempts++;
       
       // Get the highest sample ID for the current year
       const lastSample = await query(
-        "SELECT id FROM samples WHERE id LIKE $1 ORDER BY id DESC LIMIT 1",
-        [`AURA-SMP-${currentYear}-%`]
+        "SELECT id FROM samples WHERE id LIKE $1 OR id LIKE $2 ORDER BY id DESC LIMIT 1",
+        [`ANV-SMP-${currentYear}-%`, `AURA-SMP-${currentYear}-%`]
       );
       
       let nextNum = 1;
@@ -133,7 +165,7 @@ export async function registerSample(req, res, next) {
         }
       }
       
-      sample_id = `AURA-SMP-${currentYear}-${String(nextNum).padStart(6, '0')}`;
+      sample_id = `ANV-SMP-${currentYear}-${String(nextNum).padStart(6, '0')}`;
       
       try {
         // Insert sample details in a transaction-equivalent parameterized query
@@ -141,12 +173,14 @@ export async function registerSample(req, res, next) {
           `INSERT INTO samples (
             id, subject_id, gender, age, specimen_type, specimen_type_id, sample_volume, container_type, container_count,
             collection_date, collection_time, collection_datetime, lab_id, collector_id, 
-            consent_id, consent_status, barcode_status, status, consent_version, consent_template_id, consent_template_ids
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, null, 'Pending', 'Unassigned', 'Collected', $15, $16, $17)`,
+            consent_id, consent_status, barcode_status, status, consent_version, consent_template_id, consent_template_ids,
+            diagnosis, animal_id, species, breed, owner_custodian_id, collection_facility
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, null, 'Pending', 'Unassigned', 'Collected', $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
           [
-            sample_id, subject_id, gender, numericAge, resolvedSpecimenName, specimen_type_id, numericVolume, finalContainerType, finalContainerCount,
+            sample_id, subject_id, finalSex, numericAge, resolvedSpecimenName, specimen_type_id, numericVolume, finalContainerType, finalContainerCount,
             localDate, localTime, collection_datetime, lab_id, collector_id,
-            consent_version, firstTemplateId, JSON.stringify(selectedIds)
+            consent_version, firstTemplateId, JSON.stringify(selectedIds),
+            finalDiagnosis, finalAnimalId, finalSpecies, finalBreed, owner_custodian_id || null, collection_facility || labName
           ]
         );
         insertSuccess = true;
@@ -171,18 +205,26 @@ export async function registerSample(req, res, next) {
       ) VALUES ($1, $2, $3, $4, 'Sample Management', 'CREATE', 'Sample', $5, null, $6, $7)
     `, [
       collector_id, collectorName, collectorRole, labName, sample_id,
-      `Registered sample ${sample_id} (Subject: ${subject_id}, Specimen: ${resolvedSpecimenName}, Consent Version: ${consent_version}).`,
+      `Registered veterinary sample ${sample_id} (Animal: ${finalAnimalId}, Species: ${finalSpecies}, Breed: ${finalBreed || 'N/A'}, Specimen: ${resolvedSpecimenName}, Authorization: ${consent_version}).`,
       clientIp
     ]);
 
     res.status(201).json({
       success: true,
-      message: "Sample registered successfully",
+      message: "Veterinary specimen sample registered successfully",
       sample: {
         id: sample_id,
+        animal_id: finalAnimalId,
         subject_id,
-        gender,
+        species: finalSpecies,
+        breed: finalBreed,
+        owner_custodian_id: owner_custodian_id || '',
+        collection_facility: collection_facility || labName,
+        veterinary_diagnosis: finalDiagnosis,
+        gender: finalSex,
+        sex: finalSex,
         age: numericAge,
+        date_of_birth: date_of_birth || null,
         specimen_type: resolvedSpecimenName,
         specimen_type_id,
         sample_volume: numericVolume,
@@ -210,6 +252,37 @@ export async function registerSample(req, res, next) {
 }
 
 /**
+ * Retrieve registered animals
+ */
+export async function getAnimals(req, res, next) {
+  try {
+    const { species, search } = req.query;
+    let sql = `SELECT * FROM animals`;
+    const params = [];
+    const conditions = [];
+
+    if (species && species !== 'All') {
+      conditions.push(`species = $${params.length + 1}`);
+      params.push(species);
+    }
+    if (search && search.trim()) {
+      conditions.push(`(animal_id ILIKE $${params.length + 1} OR breed ILIKE $${params.length + 1} OR owner_custodian_id ILIKE $${params.length + 1})`);
+      params.push(`%${search.trim()}%`);
+    }
+
+    if (conditions.length > 0) {
+      sql += " WHERE " + conditions.join(" AND ");
+    }
+    sql += " ORDER BY created_at DESC LIMIT 200";
+
+    const result = await query(sql, params);
+    res.json({ success: true, animals: result.rows });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * Retrieve registered samples (scoped by RBAC criteria)
  */
 export async function getSamples(req, res, next) {
@@ -231,6 +304,13 @@ export async function getSamples(req, res, next) {
 
     let sql = `
       SELECT s.*, 
+             COALESCE(s.animal_id, a.animal_id, s.subject_id) as animal_id,
+             COALESCE(s.species, a.species, 'Dog') as species,
+             COALESCE(s.breed, a.breed, '') as breed,
+             COALESCE(s.owner_custodian_id, a.owner_custodian_id, '') as owner_custodian_id,
+             COALESCE(a.veterinary_diagnosis, s.diagnosis, 'Healthy Control') as veterinary_diagnosis,
+             COALESCE(a.collection_facility, s.collection_facility, l.name, 'Main Veterinary Facility') as collection_facility,
+             COALESCE(a.sex, s.gender, 'Unknown') as sex,
              u.name as collector_name, 
              l.name as lab_name,
              COALESCE(c.verification_status, s.consent_status) as consent_status,
@@ -242,11 +322,15 @@ export async function getSamples(req, res, next) {
              c.submitted_by,
              c.submitted_date,
              c.consent_type,
+             c.owner_custodian_name,
+             c.ethics_permit_ref,
+             c.authorization_type,
              b.barcode_value as barcode_text,
              b.qr_code_base64,
              b.code128_base64,
              sh.shipment_destination
       FROM samples s
+      LEFT JOIN animals a ON s.animal_id = a.animal_id OR s.subject_id = a.animal_id
       LEFT JOIN users u ON s.collector_id = u.id
       LEFT JOIN labs l ON s.lab_id = l.id
       LEFT JOIN consent c ON s.consent_id = c.id
@@ -291,6 +375,11 @@ export async function getSamples(req, res, next) {
       // Super Admin with active lab filter
       sql += " WHERE s.lab_id = $1";
       params.push(req.user.labId);
+    }
+
+    if (req.query.species && req.query.species !== 'All') {
+      sql += (params.length > 0 ? " AND " : " WHERE ") + `(s.species = $${params.length + 1} OR a.species = $${params.length + 1})`;
+      params.push(req.query.species);
     }
 
     sql += " ORDER BY s.created_at DESC";
@@ -525,7 +614,7 @@ export async function disposeSample(req, res, next) {
       req.user.userId,
       req.user.name || 'System',
       req.user.role || 'Operator',
-      req.user.labName || 'Aura Biobank',
+      req.user.labName || 'ANIVORA BioBank',
       id,
       sample.status,
       clientIp

@@ -103,7 +103,15 @@ export async function initDb() {
     if (fs.existsSync(barcodeMigrationPath)) {
       const barcodeMigrationSql = fs.readFileSync(barcodeMigrationPath, 'utf8');
       await pool.query(barcodeMigrationSql);
-      console.log("AURA DB: Barcode Manager migration & permissions verified.");
+      console.log("ANIVORA DB: Barcode Manager migration & permissions verified.");
+    }
+
+    // Ensure Veterinary Anivora schema migration is applied
+    const vetMigrationPath = path.join(__dirname, '..', 'migrations', '04_veterinary_anivora.sql');
+    if (fs.existsSync(vetMigrationPath)) {
+      const vetMigrationSql = fs.readFileSync(vetMigrationPath, 'utf8');
+      await pool.query(vetMigrationSql);
+      console.log("ANIVORA DB: Veterinary schema migration verified.");
     }
 
     // Ensure hot-path performance indexes exist

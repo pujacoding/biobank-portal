@@ -2,6 +2,7 @@ import express from 'express';
 import {
   registerSample,
   getSamples,
+  getAnimals,
   getSampleAudit,
   getPublicSample,
   getDashboardStats,
@@ -11,6 +12,7 @@ import { authenticateToken, requirePermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
+router.get('/animals', authenticateToken, getAnimals);
 router.post('/register', authenticateToken, requirePermission('Create Sample', 'Sample Management'), registerSample);
 router.get('/dashboard-stats', authenticateToken, getDashboardStats);
 router.get('/', authenticateToken, requirePermission('View Sample', 'Sample Management'), getSamples);
