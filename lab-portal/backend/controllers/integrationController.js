@@ -721,7 +721,7 @@ export async function traceSample(req, res, next) {
 /**
  * Helper to generate sequential transfer IDs: TRF-YYYY-XXX (e.g. TRF-2026-001)
  */
-async function generateTransferId(client) {
+export async function generateTransferId(client) {
   const year = new Date().getFullYear();
   const prefix = `TRF-${year}-`;
   const res = await client.query(`
@@ -1063,7 +1063,7 @@ export async function acceptTransferSample(req, res, next) {
     `, [condition, notes || null, shipment_id, sample_id]);
 
     // Update sample record: transferred to receiving lab custody, cleared old location, ready for storage
-    const newLabId = shipment.destination_lab_id || shipment.origin_lab_id;
+    const newLabId = shipment.destination_lab_id || req.user?.labId || shipment.origin_lab_id;
     await client.query(`
       UPDATE samples 
       SET status = 'Received', qc_status = 'Verified', location = NULL, lab_id = COALESCE($1, lab_id)

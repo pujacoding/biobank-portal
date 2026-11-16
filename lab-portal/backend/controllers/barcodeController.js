@@ -1,5 +1,6 @@
 import bwipjs from 'bwip-js';
 import { query, getClient } from '../services/dbService.js';
+import { generateTransferId } from './integrationController.js';
 
 /**
  * Generate high-resolution Barcode & QR code image buffers using bwip-js
@@ -1783,14 +1784,14 @@ export async function addToShipment(req, res, next) {
       });
     }
 
-    // 2. Resolve or create shipment
+    // 2. Resolve or create shipment (Standardized TRF code)
     let targetShipmentId = shipment_id;
     if (!targetShipmentId) {
-      targetShipmentId = 'SHP-' + Date.now();
+      targetShipmentId = await generateTransferId(client);
       await client.query(`
         INSERT INTO shipments (id, origin_lab_id, destination, status, shipped_at)
         VALUES ($1, $2, $3, 'In Transit', CURRENT_TIMESTAMP)
-      `, [targetShipmentId, req.user.labId || 1, destination || 'AURA Central Biobank']);
+      `, [targetShipmentId, req.user.labId || 1, destination || 'ANIVORA Central Biobank']);
     }
 
     // 3. Add to shipment_samples
@@ -1811,7 +1812,7 @@ export async function addToShipment(req, res, next) {
       barcode.barcode_id,
       barcode.barcode_value,
       'SHIPMENT_ADDED',
-      `Added to cargo shipment: ${targetShipmentId}`,
+      `Added to consignment transfer: ${targetShipmentId}`,
       req.user.userId,
       { status: barcode.status },
       { status: 'IN_TRANSIT', shipment_id: targetShipmentId }

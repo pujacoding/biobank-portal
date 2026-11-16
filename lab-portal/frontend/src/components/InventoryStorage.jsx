@@ -545,7 +545,7 @@ export default function InventoryStorage({
 
               <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Deposit Specimen Aliquot</h3>
               
-              {availableToDeposit.length === 0 ? (
+              {availableToDeposit.length === 0 && !depBarcode ? (
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '24px 0', textAlign: 'center' }}>
                   No verified or received specimens are currently pending storage. Receive transfers and verify barcodes first!
                 </div>
@@ -561,7 +561,8 @@ export default function InventoryStorage({
                       onChange={(e) => {
                         const val = e.target.value;
                         setDepBarcode(val);
-                        const match = availableToDeposit.find(s => s.id === val || s.barcode_text === val || s.barcode_value === val);
+                        const match = (availableToDeposit || []).find(s => s.id === val || s.barcode_text === val || s.barcode_value === val) ||
+                                      (samples || []).find(s => s.id === val || s.barcode_text === val || s.barcode_value === val);
                         if (match) {
                           setDepDiagnosis(match.diagnosis || 'Healthy Control');
                         }
@@ -573,6 +574,11 @@ export default function InventoryStorage({
                           {s.id} — {s.specimen_type} ({s.sample_volume || '2.0'} {s.volume_unit || 'mL'}) [{s.status || 'Received'}]
                         </option>
                       ))}
+                      {depBarcode && !availableToDeposit.some(s => s.id === depBarcode) && (
+                        <option value={depBarcode}>
+                          {depBarcode} (Selected Specimen)
+                        </option>
+                      )}
                     </select>
                   </div>
 

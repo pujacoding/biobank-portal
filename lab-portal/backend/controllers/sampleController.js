@@ -71,7 +71,13 @@ export async function registerSample(req, res, next) {
     }
 
     const collector_id = req.user.userId;
-    const lab_id = req.user.labId;
+    let lab_id = req.user.labId;
+    if ((!lab_id || isNaN(parseInt(lab_id, 10))) && collection_facility) {
+      const matchLab = await query("SELECT id FROM labs WHERE LOWER(name) = LOWER($1)", [collection_facility.trim()]);
+      if (matchLab.rows.length > 0) {
+        lab_id = matchLab.rows[0].id;
+      }
+    }
 
     // Run independent validation & metadata lookups in parallel
     const [specTypeCheck, templateResult, userResult, labNameRes] = await Promise.all([
@@ -372,8 +378,14 @@ export async function getSamples(req, res, next) {
       sql += " WHERE s.collector_id = $1";
       params.push(req.user.userId);
     } else if (req.user.labId && isSuperAdmin) {
-      // Super Admin with active lab filter
-      sql += " WHERE s.lab_id = $1";
+      // Super Admin with active lab filter: show active lab samples, plus any received/accepted specimens awaiting storage or already stored in biobank units
+      sql += ` WHERE (
+        s.lab_id = $1 
+        OR s.collection_facility ILIKE (SELECT '%' || name || '%' FROM labs WHERE id = $1)
+        OR a.collection_facility ILIKE (SELECT '%' || name || '%' FROM labs WHERE id = $1)
+        OR s.status IN ('Received', 'Accepted')
+        OR s.location IS NOT NULL
+      )`;
       params.push(req.user.labId);
     }
 
