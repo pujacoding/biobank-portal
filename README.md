@@ -1,4 +1,4 @@
-# 🧬 AURA Biobank Portal
+# 🧬 ANIVORA Biobank Portal
 
 A full-stack **Biobank & Laboratory Management System** designed to manage biological samples, consent, specimen storage, barcoding, shipments, research requests, and audit activities.
 
