@@ -21,7 +21,7 @@ const generateBarcodeBuffer = (bcid, text, options = {}) => {
 /**
  * Generate formatted Barcode Data URLs (Code 128 + QR Code)
  */
-async function generateBarcodeImages(barcodeValue, sampleId) {
+export async function generateBarcodeImages(barcodeValue, sampleId) {
   const scanUrl = `http://localhost:5173/?scan=${encodeURIComponent(barcodeValue)}`;
   const qrPng = await generateBarcodeBuffer('qrcode', scanUrl, { height: 40, width: 40 });
   const code128Png = await generateBarcodeBuffer('code128', barcodeValue, {
@@ -71,7 +71,7 @@ async function logActivity(client, userId, actionType, moduleName, entityType, e
 /**
  * Helper to log immutable barcode audit entry
  */
-async function logBarcodeAudit(client, sampleId, barcodeId, barcodeValue, actionType, reason, performedBy, oldVal = null, newVal = null, relatedEntityId = null) {
+export async function logBarcodeAudit(client, sampleId, barcodeId, barcodeValue, actionType, reason, performedBy, oldVal = null, newVal = null, relatedEntityId = null) {
   await client.query(`
     INSERT INTO barcode_audit (
       sample_id, barcode_id, barcode_value, action_type, reason, performed_by, old_value, new_value, related_entity_id, action_timestamp
@@ -91,9 +91,9 @@ async function logBarcodeAudit(client, sampleId, barcodeId, barcodeValue, action
 
 /**
  * Helper to generate standard Barcode String
- * Format: AURA-YYMMDD-XXXXXX
+ * Format: ANV-YYMMDD-XXXXXX
  */
-function formatBarcodeValue(specimenCode, sequenceNumber, aliquotIndex = null, revisionIndex = null) {
+export function formatBarcodeValue(specimenCode, sequenceNumber, aliquotIndex = null, revisionIndex = null) {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -101,7 +101,7 @@ function formatBarcodeValue(specimenCode, sequenceNumber, aliquotIndex = null, r
   const datePart = `${yy}${mm}${dd}`;
   const seqPart = String(sequenceNumber).padStart(6, '0');
 
-  let code = `AURA-${datePart}-${seqPart}`;
+  let code = `ANV-${datePart}-${seqPart}`;
   if (aliquotIndex !== null && aliquotIndex !== undefined) {
     code += `-A${String(aliquotIndex).padStart(2, '0')}`;
   }

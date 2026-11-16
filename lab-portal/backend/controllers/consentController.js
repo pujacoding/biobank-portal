@@ -1,5 +1,6 @@
 import { query, getClient } from '../services/dbService.js';
 import { checkUserPermission } from '../middleware/auth.js';
+import { generateBarcodeImages, formatBarcodeValue, logBarcodeAudit } from './barcodeController.js';
 
 const generateConsentId = () => 'CNS-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6).toUpperCase();
 
@@ -443,11 +444,80 @@ export async function verifyConsent(req, res, next) {
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || "";
     const actionType = verification_status === 'Verified' ? 'APPROVE' : 'REJECT';
 
+    let generatedBarcodeValue = null;
+
     if (sample && verification_status === 'Verified') {
-      await client.query(
-        "UPDATE samples SET consent_status = 'Verified', barcode_status = 'Unassigned', status = 'Consent Verified' WHERE consent_id = $1",
-        [consent_id]
+      // Check if sample already has an active barcode
+      const existingBarcode = await client.query(
+        "SELECT * FROM barcodes WHERE sample_id = $1 AND status NOT IN ('VOIDED', 'Inactive')",
+        [sample.id]
       );
+
+      if (existingBarcode.rows.length === 0) {
+        // Auto-generate barcode upon consent approval
+        const specimenCode = sample.specimen_code || 'SMP';
+        const sampleIdParts = sample.id.split('-');
+        const seqNum = parseInt(sampleIdParts[sampleIdParts.length - 1], 10) || (Math.floor(Math.random() * 900000) + 100000);
+        let barcode_value = formatBarcodeValue(specimenCode, seqNum);
+
+        const dupCheck = await client.query("SELECT barcode_id FROM barcodes WHERE barcode_value = $1", [barcode_value]);
+        if (dupCheck.rows.length > 0) {
+          barcode_value = `${barcode_value}-${Date.now().toString().slice(-4)}`;
+        }
+
+        const { qr_code_base64, code128_base64 } = await generateBarcodeImages(barcode_value, sample.id);
+        const volume_unit = sample.volume_unit || 'mL';
+
+        const insertBarcode = await client.query(`
+          INSERT INTO barcodes (
+            sample_id, barcode_value, barcode_type, barcode_format, volume, volume_unit, generated_by, print_count, status, qr_code_base64, code128_base64, generated_at
+          ) VALUES ($1, $2, 'Standard', 'CODE128_QR', $3, $4, $5, 0, 'GENERATED', $6, $7, CURRENT_TIMESTAMP)
+          RETURNING barcode_id, barcode_value
+        `, [
+          sample.id,
+          barcode_value,
+          sample.sample_volume,
+          volume_unit,
+          req.user.userId,
+          qr_code_base64,
+          code128_base64
+        ]);
+
+        const final_barcode_id = insertBarcode.rows[0]?.barcode_id;
+        generatedBarcodeValue = barcode_value;
+
+        // Auto-queue for printing
+        await client.query(`
+          INSERT INTO print_queue (barcode_id, sample_id, copies, status, queued_by, notes, queued_at)
+          VALUES ($1, $2, 1, 'PENDING', $3, 'Auto-queued upon consent verification', CURRENT_TIMESTAMP)
+          ON CONFLICT DO NOTHING
+        `, [final_barcode_id, sample.id, req.user.userId]);
+
+        // Update sample with generated barcode
+        await client.query(
+          "UPDATE samples SET consent_status = 'Verified', barcode_status = 'Generated', barcode_value = $1, status = 'Barcode Generated' WHERE consent_id = $2",
+          [barcode_value, consent_id]
+        );
+
+        // Audit log
+        await logBarcodeAudit(
+          client,
+          sample.id,
+          final_barcode_id,
+          barcode_value,
+          'BARCODE_GENERATED',
+          'Specimen barcode automatically generated upon consent verification',
+          req.user.userId,
+          null,
+          { barcode_value, status: 'GENERATED' }
+        );
+      } else {
+        generatedBarcodeValue = existingBarcode.rows[0].barcode_value;
+        await client.query(
+          "UPDATE samples SET consent_status = 'Verified' WHERE consent_id = $1",
+          [consent_id]
+        );
+      }
     } else if (sample && verification_status === 'Rejected') {
       await client.query(
         "UPDATE samples SET consent_status = 'Rejected', barcode_status = 'Unassigned', status = 'Collected' WHERE consent_id = $1",
@@ -470,7 +540,9 @@ export async function verifyConsent(req, res, next) {
 
     res.json({
       success: true,
-      message: `Consent verification status updated to ${verification_status}. Specimen is now eligible for label generation in Barcode Manager.`
+      message: verification_status === 'Verified'
+        ? `Consent verified successfully! Specimen barcode ${generatedBarcodeValue || ''} has been generated and queued for printing.`
+        : `Consent verification status updated to Rejected.`
     });
 
   } catch (error) {
